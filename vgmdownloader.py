@@ -45,15 +45,20 @@ for link in songList.find_all('a'):
             songs2 = link.get('href')
             href = songs2
             response2 = requests.get(str(baseURL+songs2))
+            mp3 = "mp3"
+            flac = "flac"
             print(songs2)
             print(response2)
             print("Downloading song... please wait...")
             download = req.get(href)
             if download.status_code == 200:
-                with open(songName2+ ".mp3", 'wb') as f:
-                    f.write(download.content)
-                    print("Done downloading!")
+                if flac in href:
+                    with open(songName2+ ".flac", 'wb') as f:
+                        f.write(download.content)
+                        print("Done downloading!")
+                else:
+                    with open(songName2+ ".mp3", 'wb') as f:
+                        f.write(download.content)
+                        print("Done downloading!")
             else:
                 print("ERROR, song could not be downloaded!")
-            lista.append(songs2)
-lista.append(songs)
