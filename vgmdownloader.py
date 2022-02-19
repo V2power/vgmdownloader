@@ -1,7 +1,6 @@
 import os, requests
 from re import S
 from urllib import response
-import urllib.request
 from bs4 import BeautifulSoup
 
 os.chdir("D:/Music")
