@@ -28,7 +28,12 @@ parent_dir = "D:/Music/" # In my case the Music folder on my secondary drive.
 # Please use "/" and avoid putting "C:\Music\".
 ```
 
-Now that you're ready to go!
+Now that you're ready to run the program!
+
+```python
+python vgmdownloader.py
+```
+
 
 A little tip is to search the uncomplete name of the game or album you want to download, for example:
 Search for **Streets of** and not the full game name like __Streets of Rage__. _(Trust me it will work better this way.)_
