@@ -40,16 +40,20 @@ Search for **"Streets of"** and not the full game name like __"Streets of Rage"_
 
 ### Tips
 
-Download a good music player, in my case I use [MusicBee](https://www.getmusicbee.com/)
+Download a good music player, in my case I use [MusicBee](https://www.getmusicbee.com/).
+Check out my Youtube playlist [V2's Amazing OSTs Collection](https://www.youtube.com/playlist?list=PLCEnyc2Sz_q6FHjfDSATEsal-UvEjslo_).
+I've choose only the best of the bests.
+There is some bangers in this collection, I hope you like it!
+
 ![](https://github.com/V2power/vgmdownloader/blob/main/img/example.png)
-Now you can enjoy those awesome tracks!
+Now enjoy those old but awesome tracks! 😄
 
 ### To do list
 
    - Game search mechanism - ✅
    - Song download - ✅
    - Download with differents formats - ✅
-   - Download the album image cover - ❌
+   - Download the album image cover - ✅
    - Visual Interface - ❌
    - Save the files in a different location - ❌
    - Fix the duplicated download from the same song problem - ✅
