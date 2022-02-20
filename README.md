@@ -21,12 +21,6 @@ First of all you are going to need [Python](https://www.python.org/) and two dep
 pip install beautifulsoup4
 pip install requests
 ```
-After installing those dependencies, you will need to change the **parent_dir** variable to the location that you want the files to be downloaded.
-
-```python
-parent_dir = "D:/Music/" # In my case the Music folder on my secondary drive.
-# Please use "/" and avoid putting "C:\Music\".
-```
 
 Now you're ready to run the program!
 
@@ -42,12 +36,12 @@ Search for **"Streets of"** and not the full game name like __"Streets of Rage"_
 
 Download a good music player, in my case I use [MusicBee](https://www.getmusicbee.com/).
 
+![](https://github.com/V2power/vgmdownloader/blob/main/img/example.png)
+
 Check out my YouTube playlist [V2's Amazing OSTs Collection](https://www.youtube.com/playlist?list=PLCEnyc2Sz_q6FHjfDSATEsal-UvEjslo_).
 
-I've choose only the best of the bests.
-There is some bangers in this collection, I hope you like it!
+I've choose only the best of the bests. There is some bangers in this collection, I hope you like it!
 
-![](https://github.com/V2power/vgmdownloader/blob/main/img/example.png)
 Now enjoy those old but awesome tracks! 😄
 
 ### To do list
