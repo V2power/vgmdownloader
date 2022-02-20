@@ -28,7 +28,7 @@ gameLink = lista[n]
 downres = requests.get(str(baseURL + gameLink))
 downSoup = BeautifulSoup(downres.text, "html.parser")
 echoTopic = downSoup.find("div", {"id": "EchoTopic"})
-songList = echoTopic.find("table", {"id": "songlist"})
+songList = echoTopic.find("table", {"id": "songlist"}) # Lista das músicas para download
 
 # Criando uma pasta com o título do álbum para salvar as músicas
 albumTitle = echoTopic.find("h2").string
@@ -42,8 +42,10 @@ try:
     print("Salving the downloaded song in this folder!")
     fullDirectory = parent_dir + directory
     os.chdir(fullDirectory)
+
 except OSError as error:
     print(error)
+
 # Criando a pasta MP3, dentro da pasta principal (sempre haverá os arquivos MP3).
 try:
     mp3_directory = "MP3"
@@ -52,18 +54,33 @@ try:
     os.makedirs(path, mode)
     print("Folder MP3 created inside of '% s'" % fullDirectory)
     mp3Directory = mp3_parent_dir + "/" + mp3_directory
+
 except OSError as error:
     print(error)
 
+# Inicia as variaveis
+mp3 = lastMp3 = "mp3"
+flac = lastFlac = "flac"
+
 # Selecionando as músicas para baixar
 for link in songList.find_all('a'):
+    # Verifica se a música escolhida já foi baixada
     songs = link.get('href')
+    if songs == lastMp3 or songs == lastFlac:
+        continue
+    else:
+        if mp3 in songs:
+            lastMp3 = songs
+        else:
+            lastFlac = songs
+            
+    # Identificando a música e seu titulo e preparando-a para baixar
     response = requests.get(str(baseURL+songs))
     songSoup = BeautifulSoup(response.text, "html.parser")
     songDown = songSoup.find("div", {"id": "EchoTopic"})
     songNamePlace = songDown.find_next("p", {"align": "left"})
-    songNamePlace2 = songNamePlace.find_next("p", {"align": "left"})
-    songName = songNamePlace2.find_next('b')
+    songNameTruePlace = songNamePlace.find_next("p", {"align": "left"})
+    songName = songNameTruePlace.find_next('b')
     songTitle = songName.find_next('b').string
     print("Download this song: " + songTitle)
     songFile = songDown.find_all("a", {"style": "color: #21363f;"})
@@ -75,8 +92,6 @@ for link in songList.find_all('a'):
             songLink = link.get('href')
             href = songLink
             status = requests.get(str(baseURL+songLink))
-            mp3 = "mp3"
-            flac = "flac"
             print("Downloading from this URL: " + songLink)
             print(status)
             print("Downloading... ")

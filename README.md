@@ -2,7 +2,7 @@
 
 - Download entire game music albums;
 -  .mp3 and .flac formats;
-- Search mechanism to find your exact game
+- Search mechanism to find your exact game.
 
 # VGMDownloader
 
@@ -43,6 +43,7 @@ Search for **Streets of** and not the full game name like __Streets of Rage__. _
    - Game search mechanism - ✅
    - Song download - ✅
    - Download with differents formats - ✅
+   - Download the game image cover - ❌
    - Visual Interface - ❌
    - Save the files in a different location - ❌
    - Fix the duplicated download from the same song problem - ❌
