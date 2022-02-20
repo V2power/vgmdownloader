@@ -44,6 +44,16 @@ try:
     os.chdir(fullDirectory)
 except OSError as error:
     print(error)
+# Criando a pasta MP3, dentro da pasta principal (sempre haverá os arquivos MP3).
+try:
+    mp3_directory = "MP3"
+    mp3_parent_dir = fullDirectory
+    path = os.path.join(mp3_parent_dir, mp3_directory)
+    os.makedirs(path, mode)
+    print("Folder MP3 created inside of '% s'" % fullDirectory)
+    mp3Directory = mp3_parent_dir + "/" + mp3_directory
+except OSError as error:
+    print(error)
 
 # Selecionando as músicas para baixar
 for link in songList.find_all('a'):
@@ -73,15 +83,17 @@ for link in songList.find_all('a'):
             download = req.get(href)
             if download.status_code == 200:
                 if flac in href:
+                    os.chdir(fullDirectory)
                     with open(songTitle+ ".flac", 'wb') as f:
                         f.write(download.content)
                         print("Done downloading!")
                 else:
+                    os.chdir(mp3Directory)
                     with open(songTitle+ ".mp3", 'wb') as f:
                         f.write(download.content)
                         print("Done downloading!")
             else:
                 print("ERROR, song could not be downloaded!")
         print("Selecting the next song")
-    print("No more songs found!")
+print("No more songs found!")
 print("Thanks for using this program!")
