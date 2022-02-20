@@ -1,10 +1,11 @@
-import os, requests
-from urllib import response
+import os
+import requests
 from bs4 import BeautifulSoup
 
 r = requests.get("https://downloads.khinsider.com/")
 baseURL = str(r.url)
 # zelda
+print("Welcome to the VGMDownloader!")
 gameName = str(input("Enter the game name: "))
 # https://downloads.khinsider.com/search?search=zelda
 gameName = gameName.replace(" ", "+").lower()
@@ -27,14 +28,14 @@ gameLink = lista[n]
 # Entrando na página do álbum selecionado
 downres = requests.get(str(baseURL + gameLink))
 downSoup = BeautifulSoup(downres.text, "html.parser")
-imageCover = downSoup.find("img")["src"]
+imageCover = downSoup.find("img").get("src")
 echoTopic = downSoup.find("div", {"id": "EchoTopic"})
 songList = echoTopic.find("table", {"id": "songlist"}) # Lista das músicas para download
 
 # Criando uma pasta com o título do álbum para salvar as músicas
 albumTitle = echoTopic.find("h2").string
 directory = albumTitle
-parent_dir = "D:/Music/"
+parent_dir = input("Choose where you want to download (Example: D:/Music/): ").replace("\\", "/")
 path = os.path.join(parent_dir, directory)
 mode = 0o666
 try:
