@@ -15,11 +15,11 @@ This program uses web scraping with  [BeautifulSoap](https://beautiful-soup-4.re
 
 ## How to compile it
 
-First of all you are going to need [Python](https://www.python.org/) and two depedencies, [BeautifulSoup](https://pypi.org/project/beautifulsoup4/) for the web scrapping and [urllib](https://pypi.org/project/urllib3/) to help us with the HTTP client.
+First of all you are going to need [Python](https://www.python.org/) and two depedencies, [BeautifulSoup](https://pypi.org/project/beautifulsoup4/) for the web scrapping and [Requests](https://docs.python-requests.org/en/latest/user/install/#install) to help us with the HTTP requests.
 
 ```python
 pip install beautifulsoup4
-pip install urllib3
+pip install requests
 ```
 After installing those dependencies, you will need to change the **parent_dir** variable to the location that you want the files to be downloaded.
 
