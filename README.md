@@ -41,7 +41,9 @@ Search for **"Streets of"** and not the full game name like __"Streets of Rage"_
 ### Tips
 
 Download a good music player, in my case I use [MusicBee](https://www.getmusicbee.com/).
-Check out my Youtube playlist [V2's Amazing OSTs Collection](https://www.youtube.com/playlist?list=PLCEnyc2Sz_q6FHjfDSATEsal-UvEjslo_).
+
+Check out my YouTube playlist [V2's Amazing OSTs Collection](https://www.youtube.com/playlist?list=PLCEnyc2Sz_q6FHjfDSATEsal-UvEjslo_).
+
 I've choose only the best of the bests.
 There is some bangers in this collection, I hope you like it!
 
