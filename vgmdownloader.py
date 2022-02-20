@@ -27,6 +27,7 @@ gameLink = lista[n]
 # Entrando na página do álbum selecionado
 downres = requests.get(str(baseURL + gameLink))
 downSoup = BeautifulSoup(downres.text, "html.parser")
+imageCover = downSoup.find("img")["src"]
 echoTopic = downSoup.find("div", {"id": "EchoTopic"})
 songList = echoTopic.find("table", {"id": "songlist"}) # Lista das músicas para download
 
@@ -45,6 +46,13 @@ try:
 
 except OSError as error:
     print(error)
+
+# Baixando a arte do álbum
+print("Downloading album cover...")
+coverResponse = requests.get(str(imageCover))
+with open("Cover.jpg", 'wb') as f:
+    f.write(coverResponse.content)
+    print("Done downloading the album cover!")
 
 # Criando a pasta MP3, dentro da pasta principal (sempre haverá os arquivos MP3).
 try:
@@ -73,7 +81,7 @@ for link in songList.find_all('a'):
             lastMp3 = songs
         else:
             lastFlac = songs
-            
+
     # Identificando a música e seu titulo e preparando-a para baixar
     response = requests.get(str(baseURL+songs))
     songSoup = BeautifulSoup(response.text, "html.parser")

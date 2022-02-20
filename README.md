@@ -36,17 +36,23 @@ python vgmdownloader.py
 
 
 A little tip is to search the uncomplete name of the game or album you want to download, for example:
-Search for **Streets of** and not the full game name like __Streets of Rage__. _(Trust me it will work better this way.)_
+Search for **"Streets of"** and not the full game name like __"Streets of Rage"__. _(Trust me it will work better this way.)_
+
+### Tips
+
+Download a good music player, in my case I use [MusicBee](https://www.getmusicbee.com/)
+![](https://github.com/V2power/vgmdownloader/blob/main/img/example.png)
+Now you can enjoy those awesome tracks!
 
 ### To do list
 
    - Game search mechanism - ✅
    - Song download - ✅
    - Download with differents formats - ✅
-   - Download the game image cover - ❌
+   - Download the album image cover - ❌
    - Visual Interface - ❌
    - Save the files in a different location - ❌
-   - Fix the duplicated download from the same song problem - ❌
+   - Fix the duplicated download from the same song problem - ✅
 
 
 ### Info
