@@ -38,7 +38,7 @@ Download a good music player, in my case I use [MusicBee](https://www.getmusicbe
 
 ![](https://github.com/V2power/vgmdownloader/blob/main/img/example.png)
 
-Check out my YouTube playlist [V2's Amazing OSTs Collection](https://www.youtube.com/playlist?list=PLCEnyc2Sz_q6FHjfDSATEsal-UvEjslo_).
+Check out my YouTube playlist: [V2's Amazing OSTs Collection](https://www.youtube.com/playlist?list=PLCEnyc2Sz_q6FHjfDSATEsal-UvEjslo_).
 
 I've choose only the best of the bests. There is some bangers in this collection, I hope you like it!
 
@@ -52,7 +52,7 @@ Now enjoy those old but awesome tracks! 😄
    - Download the album image cover - ✅
    - Fix the duplicated download from the same song problem - ✅
    - Save the files in a different location - ✅
-   - Fix the error when the folder already exists - ❌
+   - Fix the error when the folder already exists - ✅
    - Fix the error when there is no album cover to download - ❌
    - Visual Interface - ❌
 
