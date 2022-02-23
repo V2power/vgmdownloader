@@ -12,10 +12,12 @@ gameName = gameName.replace(" ", "+").lower()
 searchPage = requests.get(baseURL + "/search?search=" + gameName)
 lista = []
 searchSoup = BeautifulSoup(searchPage.text, "html.parser")
+results = searchSoup.find("p", {"align": "left"}).string
 search = searchSoup.find("div", {"id": "EchoTopic"})
 
 # Apresentando as opções de álbuns para download
 i = 0
+print(results)
 for link in search.find_all('a'):
     games = link.get('href')
     print(str(i+1) + ") " + str(link.get('href')).strip().replace("/game-soundtracks/album/", "").replace("-", " "))
@@ -49,75 +51,78 @@ except OSError as error:
     print(error)
 
 # Baixando a arte do álbum
-print("Downloading album cover...")
-coverResponse = requests.get(str(imageCover))
-with open("Cover.jpg", 'wb') as f:
-    f.write(coverResponse.content)
-    print("Done downloading the album cover!")
-
-# Criando a pasta MP3, dentro da pasta principal (sempre haverá os arquivos MP3).
 try:
-    mp3_directory = "MP3"
-    mp3_parent_dir = fullDirectory
-    path = os.path.join(mp3_parent_dir, mp3_directory)
-    os.makedirs(path, mode)
-    print("Folder MP3 created inside of '% s'" % fullDirectory)
-    mp3Directory = mp3_parent_dir + "/" + mp3_directory
+    print("Downloading album cover...")
+    coverResponse = requests.get(str(imageCover))
+    with open("Cover.jpg", 'wb') as f:
+        f.write(coverResponse.content)
+        print("Done downloading the album cover!")
+except:
+    print("No album covers found...") # Quando não há imagens para baixar.
+finally:
+    # Criando a pasta MP3, dentro da pasta principal (sempre haverá os arquivos MP3).
+    try:
+        mp3_directory = "MP3"
+        mp3_parent_dir = fullDirectory
+        path = os.path.join(mp3_parent_dir, mp3_directory)
+        os.makedirs(path, mode)
+        print("Folder MP3 created inside of '% s'" % fullDirectory)
+        mp3Directory = mp3_parent_dir + "/" + mp3_directory
 
-except OSError as error:
-    print(error)
+    except OSError as error:
+        print(error)
 
-# Inicia as variaveis
-mp3 = lastMp3 = "mp3"
-flac = lastFlac = "flac"
+    # Inicia as variaveis
+    mp3 = lastMp3 = "mp3"
+    flac = lastFlac = "flac"
 
-# Selecionando as músicas para baixar
-for link in songList.find_all('a'):
-    # Verifica se a música escolhida já foi baixada
-    songs = link.get('href')
-    if songs == lastMp3 or songs == lastFlac:
-        continue
-    else:
-        if mp3 in songs:
-            lastMp3 = songs
+    # Selecionando as músicas para baixar
+    for link in songList.find_all('a'):
+        # Verifica se a música escolhida já foi baixada
+        songs = link.get('href')
+        if songs == lastMp3 or songs == lastFlac:
+            continue
         else:
-            lastFlac = songs
-
-    # Identificando a música e seu titulo e preparando-a para baixar
-    response = requests.get(str(baseURL+songs))
-    songSoup = BeautifulSoup(response.text, "html.parser")
-    songDown = songSoup.find("div", {"id": "EchoTopic"})
-    songNamePlace = songDown.find_next("p", {"align": "left"})
-    songNameTruePlace = songNamePlace.find_next("p", {"align": "left"})
-    songName = songNameTruePlace.find_next('b')
-    songTitle = songName.find_next('b').string
-    print("Download this song: " + songTitle)
-    songFile = songDown.find_all("a", {"style": "color: #21363f;"})
-
-    # Deixando a conexão aberta para downloads multiplos
-    with requests.Session() as req:
-        # Selecionando os links para entrar na música
-        for link in songFile:
-            songLink = link.get('href')
-            href = songLink
-            status = requests.get(str(baseURL+songLink))
-            print("Downloading from this URL: " + songLink)
-            print(status)
-            print("Downloading... ")
-            download = req.get(href)
-            if download.status_code == 200:
-                if flac in href:
-                    os.chdir(fullDirectory)
-                    with open(songTitle+ ".flac", 'wb') as f:
-                        f.write(download.content)
-                        print("Done downloading!")
-                else:
-                    os.chdir(mp3Directory)
-                    with open(songTitle+ ".mp3", 'wb') as f:
-                        f.write(download.content)
-                        print("Done downloading!")
+            if mp3 in songs:
+                lastMp3 = songs
             else:
-                print("ERROR, song could not be downloaded!")
-        print("Selecting the next song")
-print("No more songs found!")
-print("Thanks for using this program!")
+                lastFlac = songs
+
+        # Identificando a música e seu titulo e preparando-a para baixar
+        response = requests.get(str(baseURL+songs))
+        songSoup = BeautifulSoup(response.text, "html.parser")
+        songDown = songSoup.find("div", {"id": "EchoTopic"})
+        songNamePlace = songDown.find_next("p", {"align": "left"})
+        songNameTruePlace = songNamePlace.find_next("p", {"align": "left"})
+        songName = songNameTruePlace.find_next('b')
+        songTitle = songName.find_next('b').string
+        print("Download this song: " + songTitle)
+        songFile = songDown.find_all("a", {"style": "color: #21363f;"})
+
+        # Deixando a conexão aberta para downloads multiplos
+        with requests.Session() as req:
+            # Selecionando os links para entrar na música
+            for link in songFile:
+                songLink = link.get('href')
+                href = songLink
+                status = requests.get(str(baseURL+songLink))
+                print("Downloading from this URL: " + songLink)
+                print(status)
+                print("Downloading... ")
+                download = req.get(href)
+                if download.status_code == 200:
+                    if flac in href:
+                        os.chdir(fullDirectory)
+                        with open(songTitle+ ".flac", 'wb') as f:
+                            f.write(download.content)
+                            print("Done downloading!")
+                    else:
+                        os.chdir(mp3Directory)
+                        with open(songTitle+ ".mp3", 'wb') as f:
+                            f.write(download.content)
+                            print("Done downloading!")
+                else:
+                    print("ERROR, song could not be downloaded!")
+            print("Selecting the next song")
+    print("No more songs found!")
+    print("Thanks for using this program!")
