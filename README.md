@@ -54,7 +54,6 @@ Now enjoy those old but awesome tracks! 😄
    - Save the files in a different location - ✅
    - Fix the error when the folder already exists - ✅
    - Fix the error when there is no album cover to download - ❌
-   - Visual Interface - ❌
 
 
 ### Info
