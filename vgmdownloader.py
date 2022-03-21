@@ -54,9 +54,7 @@ else:
     # https://downloads.khinsider.com/game-soundtracks/album/b-wings-nes
     # B-Wings (NES)
     gameLink = searchExist.replace(" ", "-").replace("(","").replace(")","").lower()
-    print(gameLink)
     downres = requests.get(str(baseURL + "game-soundtracks/album/" + gameLink))
-    print(baseURL + "game-soundtracks/album/" + gameLink)
     downSoup = BeautifulSoup(downres.text, "html.parser")
 
 echoTopic = downSoup.find("div", {"id": "EchoTopic"})
