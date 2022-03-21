@@ -29,8 +29,9 @@ python vgmdownloader.py
 ```
 
 
-A little tip is to search the uncomplete name of the game or album you want to download, for example:
-Search for **"Streets of"** and not the full game name like __"Streets of Rage"__. _(Trust me it will work better this way.)_
+~~A little tip is to search the uncomplete name of the game or album you want to download, for example:
+Search for **"Streets of"** and not the full game name like __"Streets of Rage"__. _(Trust me it will work better this way.)_~~
+[f06c3cb](https://github.com/V2power/vgmdownloader/commit/f06c3cbd8e62d78ffb4b2160f5401d2f7a9bcdde) - Now you can search however way you want.
 
 ### Tips
 
