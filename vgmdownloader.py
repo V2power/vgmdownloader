@@ -4,8 +4,9 @@ from bs4 import BeautifulSoup
 
 r = requests.get("https://downloads.khinsider.com/")
 baseURL = str(r.url)
-# zelda
+# Exemplo: zelda
 print("Welcome to the VGMDownloader!")
+
 a = 1
 while(a == 1):
     gameName = str(input("Enter the game name: "))
@@ -16,29 +17,39 @@ while(a == 1):
     searchSoup = BeautifulSoup(searchPage.text, "html.parser")
     results = searchSoup.find("p", {"align": "left"}).string
     search = searchSoup.find("div", {"id": "EchoTopic"})
-
+    searchExist = search.find("h2").string
     if (results == "Found 0 matching results."):
         print("No albuns found! Please try again...")
     else:
         a = 0
 
 # Apresentando as opções de álbuns para download
-i = 0
-print(results)
-for link in search.find_all('a'):
-    games = link.get('href')
-    gameSelection = str(i+1) + ") " + str(link.get('href')).strip().replace("/game-soundtracks/album/", "").replace("-", " ")
-    print(gameSelection)
-    lista.append(games)
-    i += 1
-n = int(input("Select the album number you want to download: "))
-n = n - 1
-gameLink = lista[n]
+if (searchExist == "Search"):
+    i = 0
+    print(results)
+    for link in search.find_all('a'):
+        games = link.get('href')
+        gameSelection = str(i+1) + ") " + str(link.get('href')).strip().replace("/game-soundtracks/album/", "").replace("-", " ")
+        print(gameSelection)
+        lista.append(games)
+        i += 1
+    n = int(input("Select the album number you want to download: "))
+    n = n - 1
+    gameLink = lista[n]
 
-# Entrando na página do álbum selecionado
-downres = requests.get(str(baseURL + gameLink))
-downSoup = BeautifulSoup(downres.text, "html.parser")
-imageCover = downSoup.find("img").get("src")
+    # Entrando na página do álbum selecionado
+    downres = requests.get(str(baseURL + gameLink))
+    downSoup = BeautifulSoup(downres.text, "html.parser")
+else:
+    # baseURL = https://downloads.khinsider.com/
+    # https://downloads.khinsider.com/game-soundtracks/album/b-wings-nes
+    # B-Wings (NES)
+    gameLink = searchExist.replace(" ", "-").replace("(","").replace(")","").lower()
+    print(gameLink)
+    downres = requests.get(str(baseURL + "game-soundtracks/album/" + gameLink))
+    print(baseURL + "game-soundtracks/album/" + gameLink)
+    downSoup = BeautifulSoup(downres.text, "html.parser")
+
 echoTopic = downSoup.find("div", {"id": "EchoTopic"})
 songList = echoTopic.find("table", {"id": "songlist"}) # Lista das músicas para download
 
@@ -60,6 +71,7 @@ except OSError as error:
 
 # Baixando a arte do álbum
 try:
+    imageCover = downSoup.find("img").get("src")
     print("Downloading album cover...")
     coverResponse = requests.get(str(imageCover))
     with open("Cover.jpg", 'wb') as f:
