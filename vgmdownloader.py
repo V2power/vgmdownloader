@@ -6,21 +6,29 @@ r = requests.get("https://downloads.khinsider.com/")
 baseURL = str(r.url)
 # zelda
 print("Welcome to the VGMDownloader!")
-gameName = str(input("Enter the game name: "))
-# https://downloads.khinsider.com/search?search=zelda
-gameName = gameName.replace(" ", "+").lower()
-searchPage = requests.get(baseURL + "/search?search=" + gameName)
-lista = []
-searchSoup = BeautifulSoup(searchPage.text, "html.parser")
-results = searchSoup.find("p", {"align": "left"}).string
-search = searchSoup.find("div", {"id": "EchoTopic"})
+a = 1
+while(a == 1):
+    gameName = str(input("Enter the game name: "))
+    # https://downloads.khinsider.com/search?search=zelda
+    gameName = gameName.replace(" ", "+").lower()
+    searchPage = requests.get(baseURL + "/search?search=" + gameName)
+    lista = []
+    searchSoup = BeautifulSoup(searchPage.text, "html.parser")
+    results = searchSoup.find("p", {"align": "left"}).string
+    search = searchSoup.find("div", {"id": "EchoTopic"})
+
+    if (results == "Found 0 matching results."):
+        print("No albuns found! Please try again...")
+    else:
+        a = 0
 
 # Apresentando as opções de álbuns para download
 i = 0
 print(results)
 for link in search.find_all('a'):
     games = link.get('href')
-    print(str(i+1) + ") " + str(link.get('href')).strip().replace("/game-soundtracks/album/", "").replace("-", " "))
+    gameSelection = str(i+1) + ") " + str(link.get('href')).strip().replace("/game-soundtracks/album/", "").replace("-", " ")
+    print(gameSelection)
     lista.append(games)
     i += 1
 n = int(input("Select the album number you want to download: "))
@@ -72,57 +80,57 @@ finally:
     except OSError as error:
         print(error)
 
-    # Inicia as variaveis
-    mp3 = lastMp3 = "mp3"
-    flac = lastFlac = "flac"
+# Inicia as variaveis
+mp3 = lastMp3 = "mp3"
+flac = lastFlac = "flac"
 
-    # Selecionando as músicas para baixar
-    for link in songList.find_all('a'):
-        # Verifica se a música escolhida já foi baixada
-        songs = link.get('href')
-        if songs == lastMp3 or songs == lastFlac:
-            continue
+# Selecionando as músicas para baixar
+for link in songList.find_all('a'):
+    # Verifica se a música escolhida já foi baixada
+    songs = link.get('href')
+    if songs == lastMp3 or songs == lastFlac:
+        continue
+    else:
+        if mp3 in songs:
+            lastMp3 = songs
         else:
-            if mp3 in songs:
-                lastMp3 = songs
-            else:
-                lastFlac = songs
+            lastFlac = songs
 
-        # Identificando a música e seu titulo e preparando-a para baixar
-        response = requests.get(str(baseURL+songs))
-        songSoup = BeautifulSoup(response.text, "html.parser")
-        songDown = songSoup.find("div", {"id": "EchoTopic"})
-        songNamePlace = songDown.find_next("p", {"align": "left"})
-        songNameTruePlace = songNamePlace.find_next("p", {"align": "left"})
-        songName = songNameTruePlace.find_next('b')
-        songTitle = songName.find_next('b').string
-        print("Download this song: " + songTitle)
-        songFile = songDown.find_all("a", {"style": "color: #21363f;"})
+    # Identificando a música e seu titulo e preparando-a para baixar
+    response = requests.get(str(baseURL+songs))
+    songSoup = BeautifulSoup(response.text, "html.parser")
+    songDown = songSoup.find("div", {"id": "EchoTopic"})
+    songNamePlace = songDown.find_next("p", {"align": "left"})
+    songNameTruePlace = songNamePlace.find_next("p", {"align": "left"})
+    songName = songNameTruePlace.find_next('b')
+    songTitle = songName.find_next('b').string
+    print("Download this song: " + songTitle)
+    songFile = songDown.find_all("a", {"style": "color: #21363f;"})
 
-        # Deixando a conexão aberta para downloads multiplos
-        with requests.Session() as req:
-            # Selecionando os links para entrar na música
-            for link in songFile:
-                songLink = link.get('href')
-                href = songLink
-                status = requests.get(str(baseURL+songLink))
-                print("Downloading from this URL: " + songLink)
-                print(status)
-                print("Downloading... ")
-                download = req.get(href)
-                if download.status_code == 200:
-                    if flac in href:
-                        os.chdir(fullDirectory)
-                        with open(songTitle+ ".flac", 'wb') as f:
-                            f.write(download.content)
-                            print("Done downloading!")
-                    else:
-                        os.chdir(mp3Directory)
-                        with open(songTitle+ ".mp3", 'wb') as f:
-                            f.write(download.content)
-                            print("Done downloading!")
+    # Deixando a conexão aberta para downloads multiplos
+    with requests.Session() as req:
+        # Selecionando os links para entrar na música
+        for link in songFile:
+            songLink = link.get('href')
+            href = songLink
+            status = requests.get(str(baseURL+songLink))
+            print("Downloading from this URL: " + songLink)
+            print(status)
+            print("Downloading... ")
+            download = req.get(href)
+            if download.status_code == 200:
+                if flac in href:
+                    os.chdir(fullDirectory)
+                    with open(songTitle+ ".flac", 'wb') as f:
+                        f.write(download.content)
+                        print("Done downloading!")
                 else:
-                    print("ERROR, song could not be downloaded!")
-            print("Selecting the next song")
-    print("No more songs found!")
-    print("Thanks for using this program!")
+                    os.chdir(mp3Directory)
+                    with open(songTitle+ ".mp3", 'wb') as f:
+                        f.write(download.content)
+                        print("Done downloading!")
+            else:
+                print("ERROR, song could not be downloaded!")
+        print("Selecting the next song")
+print("No more songs found!")
+print("Thanks for using this program!")
