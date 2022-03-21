@@ -5,7 +5,13 @@ from bs4 import BeautifulSoup
 r = requests.get("https://downloads.khinsider.com/")
 baseURL = str(r.url)
 # Exemplo: zelda
-print("Welcome to the VGMDownloader!")
+print(" __      _______ __  __ _____                      _                 _           ")
+print(" \ \    / / ____|  \/  |  __ \                    | |               | |          ")
+print("  \ \  / / |  __| \  / | |  | | _____      ___ __ | | ___   __ _  __| | ___ _ __ ")
+print("   \ \/ /| | |_ | |\/| | |  | |/ _ \ \ /\ / / '_ \| |/ _ \ / _` |/ _` |/ _ \ '__|")
+print("    \  / | |__| | |  | | |__| | (_) \ V  V /| | | | | (_) | (_| | (_| |  __/ |   ")
+print("     \/   \_____|_|  |_|_____/ \___/ \_/\_/ |_| |_|_|\___/ \__,_|\__,_|\___|_|   ")
+print("                                                                  created by V2\n")
 
 a = 1
 while(a == 1):
@@ -19,21 +25,24 @@ while(a == 1):
     search = searchSoup.find("div", {"id": "EchoTopic"})
     searchExist = search.find("h2").string
     if (results == "Found 0 matching results."):
-        print("No albuns found! Please try again...")
+        print("No albuns found! Please try again...\n")
     else:
         a = 0
 
 # Apresentando as opções de álbuns para download
 if (searchExist == "Search"):
     i = 0
-    print(results)
+    print(results + "\n")
     for link in search.find_all('a'):
         games = link.get('href')
         gameSelection = str(i+1) + ") " + str(link.get('href')).strip().replace("/game-soundtracks/album/", "").replace("-", " ")
         print(gameSelection)
         lista.append(games)
         i += 1
+    print("")
+    print("=======================================================")
     n = int(input("Select the album number you want to download: "))
+    print("=======================================================")
     n = n - 1
     gameLink = lista[n]
 
@@ -57,6 +66,7 @@ songList = echoTopic.find("table", {"id": "songlist"}) # Lista das músicas para
 albumTitle = echoTopic.find("h2").string
 directory = albumTitle
 parent_dir = input("Choose where you want to download (Example: D:/Music/): ").replace("\\", "/")
+print("=======================================================\n")
 path = os.path.join(parent_dir, directory)
 mode = 0o666
 try:
@@ -76,7 +86,7 @@ try:
     coverResponse = requests.get(str(imageCover))
     with open("Cover.jpg", 'wb') as f:
         f.write(coverResponse.content)
-        print("Done downloading the album cover!")
+        print("Done downloading the album cover!\n")
 except:
     print("No album covers found...") # Quando não há imagens para baixar.
 finally:
@@ -135,14 +145,14 @@ for link in songList.find_all('a'):
                     os.chdir(fullDirectory)
                     with open(songTitle+ ".flac", 'wb') as f:
                         f.write(download.content)
-                        print("Done downloading!")
+                        print("Done downloading!\n")
                 else:
                     os.chdir(mp3Directory)
                     with open(songTitle+ ".mp3", 'wb') as f:
                         f.write(download.content)
-                        print("Done downloading!")
+                        print("Done downloading!\n")
             else:
-                print("ERROR, song could not be downloaded!")
-        print("Selecting the next song")
-print("No more songs found!")
+                print("ERROR, song could not be downloaded!\n")
+        print("Selecting the next song\n")
+print("No more songs found!\n")
 print("Thanks for using this program!")
