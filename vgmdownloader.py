@@ -38,15 +38,16 @@ if (searchExist == "Search"):
     print(results + "\n")
     for link in search.find_all('a'):
         games = link.get('href')
-        gameSelection = str(i+1) + ") " + str(link.get('href')).strip().replace("/game-soundtracks/album/", "").replace("-", " ")
+        gameSelection = str(link.get('href')).strip().replace("/game-soundtracks/album/", "").replace("-", " ")
+        indexGameSelection = str(i+1) + ") " + gameSelection
         if (oldGameSelection == gameSelection or "/" in gameSelection):
             continue
         else:
-            print(gameSelection)
+            print(indexGameSelection)
             lista.append(games)
             i += 1
         oldGameSelection = gameSelection
-        
+
     print("")
     print("=======================================================")
     n = int(input("Select the album number you want to download: "))
