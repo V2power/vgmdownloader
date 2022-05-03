@@ -22,8 +22,8 @@ while(a == 1):
     lista = []
     searchSoup = BeautifulSoup(searchPage.text, "html.parser")
     results = searchSoup.find("p", {"align": "left"}).string
-    search = searchSoup.find("div", {"id": "EchoTopic"})
-    searchExist = search.find("h2").string
+    search = searchSoup.find("table", {"class": "albumList"})
+    searchExist = searchSoup.find("h2").string
     if (results == "Found 0 matching results."):
         print("No albuns found! Please try again...\n")
     else:
@@ -32,13 +32,20 @@ while(a == 1):
 # Apresentando as opções de álbuns para download
 if (searchExist == "Search"):
     i = 0
+    oldGameSelection = "a" #Só para iniciar a variável e fazer a verificação para pular repitidos
+    gameSelection = "b"
+
     print(results + "\n")
     for link in search.find_all('a'):
         games = link.get('href')
         gameSelection = str(i+1) + ") " + str(link.get('href')).strip().replace("/game-soundtracks/album/", "").replace("-", " ")
-        print(gameSelection)
-        lista.append(games)
-        i += 1
+        if (oldGameSelection == gameSelection or "/" in gameSelection):
+            continue
+        else:
+            print(gameSelection)
+            lista.append(games)
+            i += 1
+        oldGameSelection = gameSelection
     print("")
     print("=======================================================")
     n = int(input("Select the album number you want to download: "))
@@ -57,7 +64,7 @@ else:
     downres = requests.get(str(baseURL + "game-soundtracks/album/" + gameLink))
     downSoup = BeautifulSoup(downres.text, "html.parser")
 
-echoTopic = downSoup.find("div", {"id": "EchoTopic"})
+echoTopic = downSoup.find("div", {"id": "pageContent"})
 songList = echoTopic.find("table", {"id": "songlist"}) # Lista das músicas para download
 
 # Criando uma pasta com o título do álbum para salvar as músicas
@@ -119,7 +126,7 @@ for link in songList.find_all('a'):
     # Identificando a música e seu titulo e preparando-a para baixar
     response = requests.get(str(baseURL+songs))
     songSoup = BeautifulSoup(response.text, "html.parser")
-    songDown = songSoup.find("div", {"id": "EchoTopic"})
+    songDown = songSoup.find("div", {"id": "pageContent"})
     songNamePlace = songDown.find_next("p", {"align": "left"})
     songNameTruePlace = songNamePlace.find_next("p", {"align": "left"})
     songName = songNameTruePlace.find_next('b')
