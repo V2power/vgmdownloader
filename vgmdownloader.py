@@ -46,6 +46,7 @@ if (searchExist == "Search"):
             lista.append(games)
             i += 1
         oldGameSelection = gameSelection
+        
     print("")
     print("=======================================================")
     n = int(input("Select the album number you want to download: "))
