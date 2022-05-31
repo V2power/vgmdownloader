@@ -73,6 +73,8 @@ songList = echoTopic.find("table", {"id": "songlist"}) # Lista das músicas para
 albumTitle = echoTopic.find("h2").string
 directory = albumTitle
 parent_dir = input("Choose where you want to download (Example: D:/Music/): ").replace("\\", "/")
+if not (parent_dir.endswith("/")):
+    parent_dir = parent_dir + "/"
 print("=======================================================\n")
 path = os.path.join(parent_dir, directory)
 mode = 0o666
