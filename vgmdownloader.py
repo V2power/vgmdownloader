@@ -136,7 +136,7 @@ for link in songList.find_all('a'):
     songName = songNameTruePlace.find_next('b')
     songTitle = songName.find_next('b').string
     print("Download this song: " + songTitle)
-    songFile = songDown.find_all("a", {"style": "color: #21363f;"})
+    songFile = songTitle.find_all_next("a")
 
     # Deixando a conexão aberta para downloads multiplos
     with requests.Session() as req:
