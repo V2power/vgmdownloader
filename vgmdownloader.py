@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from bs4 import BeautifulSoup
 
@@ -71,8 +72,8 @@ songList = echoTopic.find("table", {"id": "songlist"}) # Lista das músicas para
 
 # Criando uma pasta com o título do álbum para salvar as músicas
 albumTitle = echoTopic.find("h2").string
-directory = albumTitle
-parent_dir = input("Choose where you want to download (Example: D:/Music/): ").replace("\\", "/")
+directory = albumTitle.replace(":", "")
+parent_dir = input("Choose where you want to download (Example: C:/Users/V2/Music/): ").replace("\\", "/")
 if not (parent_dir.endswith("/")):
     parent_dir = parent_dir + "/"
 print("=======================================================\n")
@@ -165,3 +166,4 @@ for link in songList.find_all('a'):
         print("Selecting the next song\n")
 print("No more songs found!\n")
 print("Thanks for using this program!")
+time.sleep(5)
