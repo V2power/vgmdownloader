@@ -3,7 +3,11 @@ import time
 import requests
 from bs4 import BeautifulSoup
 
-r = requests.get("https://downloads.khinsider.com/")
+headers = {
+    'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+}
+
+r = requests.get("https://downloads.khinsider.com/", headers=headers)
 baseURL = str(r.url)
 # Exemplo: zelda
 print(" __      _______ __  __ _____                      _                 _           ")
@@ -19,7 +23,7 @@ while(a == 1):
     gameName = str(input("Enter the game name: "))
     # https://downloads.khinsider.com/search?search=zelda
     gameName = gameName.replace(" ", "+").lower()
-    searchPage = requests.get(baseURL + "/search?search=" + gameName)
+    searchPage = requests.get(baseURL + "/search?search=" + gameName, headers=headers)
     lista = []
     searchSoup = BeautifulSoup(searchPage.text, "html.parser")
     results = searchSoup.find("p", {"align": "left"}).string
@@ -57,14 +61,14 @@ if (searchExist == "Search"):
     gameLink = lista[n]
 
     # Entrando na página do álbum selecionado
-    downres = requests.get(str(baseURL + gameLink))
+    downres = requests.get(str(baseURL + gameLink), headers=headers)
     downSoup = BeautifulSoup(downres.text, "html.parser")
 else:
     # baseURL = https://downloads.khinsider.com/
     # https://downloads.khinsider.com/game-soundtracks/album/b-wings-nes
     # B-Wings (NES)
     gameLink = searchExist.replace(" ", "-").replace("(","").replace(")","").lower()
-    downres = requests.get(str(baseURL + "game-soundtracks/album/" + gameLink))
+    downres = requests.get(str(baseURL + "game-soundtracks/album/" + gameLink), headers=headers)
     downSoup = BeautifulSoup(downres.text, "html.parser")
 
 echoTopic = downSoup.find("div", {"id": "pageContent"})
@@ -93,7 +97,7 @@ except OSError as error:
 try:
     imageCover = downSoup.find("img").get("src")
     print("Downloading album cover...")
-    coverResponse = requests.get(str(imageCover))
+    coverResponse = requests.get(str(imageCover), headers=headers)
     with open("Cover.jpg", 'wb') as f:
         f.write(coverResponse.content)
         print("Done downloading the album cover!\n")
@@ -129,7 +133,7 @@ for link in songList.find_all('a'):
             lastFlac = songs
 
     # Identificando a música e seu titulo e preparando-a para baixar
-    response = requests.get(str(baseURL+songs))
+    response = requests.get(str(baseURL+songs), headers=headers)
     songSoup = BeautifulSoup(response.text, "html.parser")
     songDown = songSoup.find("div", {"id": "pageContent"})
     songNamePlace = songDown.find_next("p", {"align": "left"})
@@ -145,7 +149,7 @@ for link in songList.find_all('a'):
         for link in songFile:
             songLink = link.get('href')
             href = songLink
-            status = requests.get(str(baseURL+songLink))
+            status = requests.get(str(baseURL+songLink), headers=headers)
             print("Downloading from this URL: " + songLink)
             print(status)
             print("Downloading... ")
