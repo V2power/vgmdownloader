@@ -8,8 +8,17 @@ from pathlib import Path
 from typing import Iterable, Literal
 from urllib.parse import unquote, urljoin, urlparse
 
-import requests
-from bs4 import BeautifulSoup, Tag
+try:
+    import requests
+except ImportError:
+    print("Missing dependency: requests. Install with: pip install requests")
+    sys.exit(1)
+
+try:
+    from bs4 import BeautifulSoup, Tag
+except ImportError:
+    print("Missing dependency: beautifulsoup4. Install with: pip install beautifulsoup4")
+    sys.exit(1)
 
 try:
     import questionary
@@ -17,7 +26,7 @@ try:
     from rich.panel import Panel
     from rich.table import Table
 except ImportError:
-    print("Missing dependencies. Install with: pip install rich questionary")
+    print("Missing dependencies: rich/questionary. Install with: pip install rich questionary")
     sys.exit(1)
 
 BASE_URL = "https://downloads.khinsider.com/"
