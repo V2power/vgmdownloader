@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +11,15 @@ from urllib.parse import unquote, urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup, Tag
 
+try:
+    import questionary
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+except ImportError:
+    print("Missing dependencies. Install with: pip install rich questionary")
+    sys.exit(1)
+
 BASE_URL = "https://downloads.khinsider.com/"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) "
@@ -17,6 +27,7 @@ USER_AGENT = (
 )
 REQUEST_TIMEOUT = 30
 DownloadFormat = Literal["mp3", "flac", "both"]
+console = Console()
 
 
 @dataclass(frozen=True)
@@ -25,14 +36,14 @@ class AlbumOption:
     relative_url: str
 
 
-def print_banner() -> None:
-    print(" __      _______ __  __ _____                      _                 _           ")
-    print(" \\ \\    / / ____|  \\/  |  __ \\                    | |               | |          ")
-    print("  \\ \\  / / |  __| \\  / | |  | | _____      ___ __ | | ___   __ _  __| | ___ _ __ ")
-    print("   \\ \\/ /| | |_ | |\\/| | |  | |/ _ \\ \\ /\\ / / '_ \\| |/ _ \\ / _` |/ _` |/ _ \\ '__|")
-    print("    \\  / | |__| | |  | | |__| | (_) \\ V  V /| | | | | (_) | (_| | (_| |  __/ |   ")
-    print("     \\/   \\_____|_|  |_|_____/ \\___/ \\_/\\_/ |_| |_|_|\\___/ \\__,_|\\__,_|\\___|_|   ")
-    print("                                                                  created by V2\n")
+def ui_header() -> None:
+    console.print(
+        Panel.fit(
+            "[bold cyan]VGM Downloader CLI[/bold cyan]\n"
+            "[dim]Modern interface for KHInsider album downloads[/dim]",
+            border_style="cyan",
+        )
+    )
 
 
 def build_session() -> requests.Session:
@@ -48,7 +59,6 @@ def get_soup(session: requests.Session, url: str) -> BeautifulSoup:
 
 
 def sanitize_filename(value: str) -> str:
-    # Remove characters forbidden in Windows file names.
     sanitized = re.sub(r'[<>:"/\\|?*]', "", value).strip()
     return sanitized.rstrip(".") or "untitled"
 
@@ -73,7 +83,6 @@ def extract_title_from_download_url(href: str, fallback_title: str, extension: s
     if decoded_name.lower().endswith(suffix):
         raw_title = decoded_name[: -len(suffix)]
         if raw_title.strip():
-            # Remove common track-number prefixes like "02 - ", "2. ", "02_".
             clean_title = re.sub(r"^\s*\d+\s*[-._)]\s*", "", raw_title).strip()
             return sanitize_filename(clean_title or raw_title)
 
@@ -81,23 +90,29 @@ def extract_title_from_download_url(href: str, fallback_title: str, extension: s
 
 
 def ask_game_query() -> str:
-    return input("Enter the game name: ").strip()
+    while True:
+        value = questionary.text("Enter the game name:").ask()
+        if value and value.strip():
+            return value.strip()
+        console.print("[yellow]Please enter a valid game name.[/yellow]")
 
 
 def ask_download_format() -> DownloadFormat:
-    while True:
-        print("\nChoose download format:")
-        print("1) MP3 only")
-        print("2) FLAC only")
-        print("3) Both MP3 and FLAC")
-        choice = input("Select an option (1-3) [default: 1]: ").strip()
-        if choice in ("", "1"):
-            return "mp3"
-        if choice == "2":
-            return "flac"
-        if choice == "3":
-            return "both"
-        print("Invalid option. Please try again.")
+    selected = questionary.select(
+        "Choose download format:",
+        choices=[
+            "MP3 only",
+            "FLAC only",
+            "Both MP3 and FLAC",
+        ],
+        default="MP3 only",
+    ).ask()
+
+    if selected == "FLAC only":
+        return "flac"
+    if selected == "Both MP3 and FLAC":
+        return "both"
+    return "mp3"
 
 
 def search_album_page(session: requests.Session, query: str) -> BeautifulSoup:
@@ -131,24 +146,17 @@ def parse_search_results(search_soup: BeautifulSoup) -> tuple[str, str, list[Alb
 
 
 def choose_album(options: list[AlbumOption], result_text: str) -> AlbumOption:
-    print(result_text)
-    print()
+    table = Table(title=result_text or "Album Results", show_header=True, header_style="bold cyan")
+    table.add_column("#", style="bold")
+    table.add_column("Album")
     for index, option in enumerate(options, start=1):
-        print(f"{index}) {option.name}")
+        table.add_row(str(index), option.name)
+    console.print(table)
 
-    while True:
-        print("\n=======================================================")
-        choice_raw = input("Select the album number you want to download: ").strip()
-        print("=======================================================")
-        if not choice_raw.isdigit():
-            print("Please enter a valid number.")
-            continue
-
-        choice = int(choice_raw) - 1
-        if 0 <= choice < len(options):
-            return options[choice]
-
-        print("Invalid option. Please try again.")
+    choice_labels = [f"{idx}. {opt.name}" for idx, opt in enumerate(options, start=1)]
+    selected = questionary.select("Select album:", choices=choice_labels).ask()
+    selected_idx = int(selected.split(".", 1)[0]) - 1
+    return options[selected_idx]
 
 
 def resolve_album_url(heading: str) -> str:
@@ -164,11 +172,12 @@ def resolve_album_url(heading: str) -> str:
 def find_album_soup(session: requests.Session) -> BeautifulSoup:
     while True:
         query = ask_game_query()
+        console.print(f"[dim]Searching for:[/dim] [cyan]{query}[/cyan]")
         search_soup = search_album_page(session, query)
         result_text, heading, options = parse_search_results(search_soup)
 
         if result_text == "Found 0 matching results.":
-            print("No albums found! Please try again...\n")
+            console.print("[yellow]No albums found. Try another query.[/yellow]")
             continue
 
         if heading == "Search" and options:
@@ -178,18 +187,22 @@ def find_album_soup(session: requests.Session) -> BeautifulSoup:
         if heading:
             return get_soup(session, resolve_album_url(heading))
 
-        print("Unexpected search response. Please try again.\n")
+        console.print("[yellow]Unexpected search response. Try again.[/yellow]")
 
 
 def prepare_directories(
     album_title: str,
     selected_format: DownloadFormat,
 ) -> tuple[Path, Path | None, Path | None]:
-    parent_raw = input(
-        "Choose where you want to download "
-        "(Example: C:/Users/V2/Music/): "
-    ).strip()
-    parent_dir = Path(parent_raw.replace("¥", "/")).expanduser()
+    parent = questionary.path(
+        "Choose where to save downloads:",
+        default=str(Path.home() / "Music"),
+        only_directories=True,
+    ).ask()
+    if not parent:
+        raise RuntimeError("No target directory selected.")
+
+    parent_dir = Path(parent.replace("¥", "/")).expanduser()
     album_dir = parent_dir / sanitize_filename(album_title)
     mp3_dir: Path | None = None
     flac_dir: Path | None = None
@@ -201,8 +214,13 @@ def prepare_directories(
         mp3_dir.mkdir(parents=True, exist_ok=True)
         flac_dir.mkdir(parents=True, exist_ok=True)
 
-    print("=======================================================\n")
-    print(f"Saving downloaded files to: {album_dir}")
+    console.print(
+        Panel.fit(
+            f"[green]Saving to:[/green] {album_dir}\n"
+            f"[green]Format:[/green] {selected_format.upper()}",
+            border_style="green",
+        )
+    )
     return album_dir, mp3_dir, flac_dir
 
 
@@ -213,22 +231,22 @@ def download_album_cover(
 ) -> None:
     image_tag = album_soup.find("img")
     if not isinstance(image_tag, Tag):
-        print("No album covers found...")
+        console.print("[dim]No album cover found.[/dim]")
         return
 
     image_src = image_tag.get("src")
     if not image_src:
-        print("No album covers found...")
+        console.print("[dim]No album cover found.[/dim]")
         return
 
     try:
-        print("Downloading album cover...")
+        console.print("[cyan]Downloading album cover...[/cyan]")
         response = session.get(urljoin(BASE_URL, image_src), timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         (album_dir / "Cover.jpg").write_bytes(response.content)
-        print("Done downloading the album cover!\n")
+        console.print("[green]Album cover saved.[/green]")
     except requests.RequestException as error:
-        print(f"Could not download album cover: {error}")
+        console.print(f"[yellow]Could not download album cover:[/yellow] {error}")
 
 
 def iter_song_pages(song_table: Tag) -> Iterable[str]:
@@ -262,11 +280,12 @@ def download_song_files(
     mp3_dir: Path | None,
     flac_dir: Path | None,
     selected_format: DownloadFormat,
-) -> None:
+) -> int:
     page_content = song_soup.find("div", {"id": "pageContent"})
     if not isinstance(page_content, Tag):
-        return
+        return 0
 
+    downloaded = 0
     for link in page_content.find_all("a"):
         href = (link.get("href") or "").strip()
         if "mp3" not in href and "flac" not in href:
@@ -295,18 +314,20 @@ def download_song_files(
         if selected_format != "both" and extension != selected_format:
             continue
 
-        print(f"Downloading from this URL: {href}")
         try:
             response = session.get(href, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
         except requests.RequestException as error:
-            print(f"ERROR, song could not be downloaded: {error}\n")
+            console.print(f"[red]Failed:[/red] {song_title} ({extension}) -> {error}")
             continue
 
         base_title = extract_title_from_download_url(href, song_title, extension)
         destination = ensure_unique_path(target_dir / f"{base_title}.{extension}")
         destination.write_bytes(response.content)
-        print(f"Done downloading: {destination.name}\n")
+        console.print(f"[green]Saved:[/green] {destination.name}")
+        downloaded += 1
+
+    return downloaded
 
 
 def download_album_tracks(
@@ -316,31 +337,32 @@ def download_album_tracks(
     mp3_dir: Path | None,
     flac_dir: Path | None,
     selected_format: DownloadFormat,
-) -> None:
+) -> int:
     page_content = album_soup.find("div", {"id": "pageContent"})
     if not isinstance(page_content, Tag):
-        print("Could not parse album page.")
-        return
+        console.print("[red]Could not parse album page.[/red]")
+        return 0
 
     song_table = page_content.find("table", {"id": "songlist"})
     if not isinstance(song_table, Tag):
-        print("No song list found for this album.")
-        return
+        console.print("[red]No song list found for this album.[/red]")
+        return 0
 
+    total_downloaded = 0
     for song_href in iter_song_pages(song_table):
         try:
             song_soup = get_soup(session, urljoin(BASE_URL, song_href))
         except requests.RequestException as error:
-            print(f"Could not open song page {song_href}: {error}")
+            console.print(f"[yellow]Could not open song page:[/yellow] {song_href} ({error})")
             continue
 
         song_title = parse_song_title(song_soup)
         if not song_title:
-            print(f"Could not identify title for: {song_href}")
+            console.print(f"[yellow]Could not identify title for:[/yellow] {song_href}")
             continue
 
-        print(f"Download this song: {song_title}")
-        download_song_files(
+        console.print(f"[cyan]Track:[/cyan] {song_title}")
+        total_downloaded += download_song_files(
             session,
             song_soup,
             song_title,
@@ -349,11 +371,12 @@ def download_album_tracks(
             flac_dir,
             selected_format,
         )
-        print("Selecting the next song\n")
+
+    return total_downloaded
 
 
 def main() -> None:
-    print_banner()
+    ui_header()
     with build_session() as session:
         selected_format = ask_download_format()
         album_soup = find_album_soup(session)
@@ -370,7 +393,7 @@ def main() -> None:
 
         album_dir, mp3_dir, flac_dir = prepare_directories(album_title, selected_format)
         download_album_cover(session, album_soup, album_dir)
-        download_album_tracks(
+        downloaded_count = download_album_tracks(
             session,
             album_soup,
             album_dir,
@@ -379,9 +402,14 @@ def main() -> None:
             selected_format,
         )
 
-    print("No more songs found!\n")
-    print("Thanks for using this program!")
-    time.sleep(5)
+    console.print(
+        Panel.fit(
+            f"[bold green]Finished[/bold green]\n"
+            f"Downloaded files: [bold]{downloaded_count}[/bold]",
+            border_style="green",
+        )
+    )
+    time.sleep(2)
 
 
 if __name__ == "__main__":
