@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Literal
@@ -25,8 +24,8 @@ try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
-except ImportError:
-    print("Missing dependencies: rich/questionary. Install with: pip install rich questionary")
+except Exception as error:
+    print(f"Import failure: {type(error).__name__}: {error}")
     sys.exit(1)
 
 BASE_URL = "https://downloads.khinsider.com/"
@@ -281,6 +280,16 @@ def ask_download_images() -> bool:
     selected = questionary.confirm(
         "Download album images?",
         default=True,
+    ).ask()
+    if selected is None:
+        raise KeyboardInterrupt
+    return bool(selected)
+
+
+def ask_download_another_album() -> bool:
+    selected = questionary.confirm(
+        "Download another album?",
+        default=False,
     ).ask()
     if selected is None:
         raise KeyboardInterrupt
@@ -605,40 +614,43 @@ def download_album_tracks(
 def main() -> None:
     ui_header()
     with build_session() as session:
-        album_soup = find_album_soup(session)
-        selected_format = choose_download_format_for_album(session, album_soup)
-        page_content = album_soup.find("div", {"id": "pageContent"})
-        if not isinstance(page_content, Tag):
-            raise RuntimeError("Album page does not contain expected content.")
+        while True:
+            album_soup = find_album_soup(session)
+            selected_format = choose_download_format_for_album(session, album_soup)
+            page_content = album_soup.find("div", {"id": "pageContent"})
+            if not isinstance(page_content, Tag):
+                raise RuntimeError("Album page does not contain expected content.")
 
-        album_title_tag = page_content.find("h2")
-        album_title = (
-            album_title_tag.get_text(strip=True)
-            if isinstance(album_title_tag, Tag)
-            else "Unknown Album"
-        )
+            album_title_tag = page_content.find("h2")
+            album_title = (
+                album_title_tag.get_text(strip=True)
+                if isinstance(album_title_tag, Tag)
+                else "Unknown Album"
+            )
 
-        album_dir, mp3_dir, flac_dir = prepare_directories(album_title, selected_format)
-        if ask_download_images():
-            download_album_images(session, album_soup, album_dir)
-        console.print(f"[bold cyan]Album:[/bold cyan] {album_title}\n")
-        downloaded_count = download_album_tracks(
-            session,
-            album_soup,
-            album_dir,
-            mp3_dir,
-            flac_dir,
-            selected_format,
-        )
+            album_dir, mp3_dir, flac_dir = prepare_directories(album_title, selected_format)
+            if ask_download_images():
+                download_album_images(session, album_soup, album_dir)
+            console.print(f"[bold cyan]Album:[/bold cyan] {album_title}\n")
+            downloaded_count = download_album_tracks(
+                session,
+                album_soup,
+                album_dir,
+                mp3_dir,
+                flac_dir,
+                selected_format,
+            )
 
-    console.print(
-        Panel.fit(
-            f"[bold green]Finished[/bold green]\n"
-            f"Downloaded files: [bold]{downloaded_count}[/bold]",
-            border_style="green",
-        )
-    )
-    time.sleep(2)
+            console.print(
+                Panel.fit(
+                    f"[bold green]Finished Album[/bold green]\n"
+                    f"Downloaded files: [bold]{downloaded_count}[/bold]",
+                    border_style="green",
+                )
+            )
+            if not ask_download_another_album():
+                break
+            console.print()
 
 
 if __name__ == "__main__":
