@@ -96,6 +96,15 @@ def strip_track_prefix(title: str) -> str:
     return cleaned
 
 
+def get_tag_attr_text(tag: Tag, attr_name: str) -> str:
+    value = tag.get(attr_name)
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return " ".join(str(item) for item in value).strip()
+    return str(value).strip()
+
+
 def ensure_unique_path(path: Path) -> Path:
     if not path.exists():
         return path
@@ -167,7 +176,9 @@ def parse_search_results(search_soup: BeautifulSoup) -> tuple[str, str, list[Alb
     if isinstance(album_table, Tag):
         seen: set[str] = set()
         for link in album_table.find_all("a"):
-            href = (link.get("href") or "").strip()
+            if not isinstance(link, Tag):
+                continue
+            href = get_tag_attr_text(link, "href")
             if not href.startswith("/game-soundtracks/album/"):
                 continue
             if href in seen:
@@ -291,14 +302,16 @@ def download_album_images(
     # Some pages use class="albumImage" on <img>, others on the parent/link.
     image_tags = page_content.select("img.albumImage, .albumImage img")
     for image_tag in image_tags:
-        src = (image_tag.get("src") or "").strip()
+        if not isinstance(image_tag, Tag):
+            continue
+        src = get_tag_attr_text(image_tag, "src")
         if not src:
             continue
 
         image_url = urljoin(BASE_URL, src)
         parent = image_tag.parent
         if isinstance(parent, Tag) and parent.name == "a":
-            href = (parent.get("href") or "").strip()
+            href = get_tag_attr_text(parent, "href")
             href_path = urlparse(href).path.lower()
             if href and re.search(r"\.(jpg|jpeg|png|webp|gif|bmp)$", href_path):
                 image_url = urljoin(BASE_URL, href)
@@ -337,7 +350,9 @@ def download_album_images(
 def iter_song_pages(song_table: Tag) -> Iterable[str]:
     seen: set[str] = set()
     for link in song_table.find_all("a"):
-        href = (link.get("href") or "").strip()
+        if not isinstance(link, Tag):
+            continue
+        href = get_tag_attr_text(link, "href")
         if not href:
             continue
         ext = detect_link_extension(href)
@@ -377,7 +392,9 @@ def detect_album_formats(session: requests.Session, album_soup: BeautifulSoup) -
     seen_candidates: set[str] = set()
 
     for link in song_table.find_all("a"):
-        href = (link.get("href") or "").strip()
+        if not isinstance(link, Tag):
+            continue
+        href = get_tag_attr_text(link, "href")
         if not href:
             continue
 
@@ -407,7 +424,9 @@ def detect_album_formats(session: requests.Session, album_soup: BeautifulSoup) -
             continue
 
         for file_link in song_content.find_all("a"):
-            file_href = (file_link.get("href") or "").strip()
+            if not isinstance(file_link, Tag):
+                continue
+            file_href = get_tag_attr_text(file_link, "href")
             ext = detect_link_extension(file_href)
             if ext:
                 formats.add(ext)
@@ -454,7 +473,9 @@ def parse_song_title(song_soup: BeautifulSoup, selected_format: DownloadFormat) 
     # Prefer extracting the track title from the download URL itself.
     for wanted_ext in preferred:
         for link in content.find_all("a"):
-            href = (link.get("href") or "").strip()
+            if not isinstance(link, Tag):
+                continue
+            href = get_tag_attr_text(link, "href")
             ext = detect_link_extension(href)
             if not ext or ext != wanted_ext:
                 continue
@@ -482,7 +503,9 @@ def download_song_files(
 
     downloaded = 0
     for link in page_content.find_all("a"):
-        href = (link.get("href") or "").strip()
+        if not isinstance(link, Tag):
+            continue
+        href = get_tag_attr_text(link, "href")
         if "mp3" not in href and "flac" not in href:
             continue
 
