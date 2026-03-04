@@ -47,6 +47,17 @@ def ui_header() -> None:
     console.print("[dim]Created by V2[/dim]", justify="right")
 
 
+def show_cancel_message() -> None:
+    console.print()
+    console.print(
+        Panel.fit(
+            "[bold yellow]Operation canceled[/bold yellow]\n"
+            "[dim]Download interrupted by user (Ctrl + C).[/dim]",
+            border_style="yellow",
+        )
+    )
+
+
 def build_session() -> requests.Session:
     session = requests.Session()
     session.headers.update({"User-Agent": USER_AGENT})
@@ -105,6 +116,8 @@ def extract_title_from_download_url(href: str, fallback_title: str, extension: s
 def ask_game_query() -> str:
     while True:
         value = questionary.text("Enter the game name:").ask()
+        if value is None:
+            raise KeyboardInterrupt
         if value and value.strip():
             return value.strip()
         console.print("[yellow]Please enter a valid game name.[/yellow]")
@@ -553,4 +566,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (KeyboardInterrupt, EOFError):
+        show_cancel_message()
+        sys.exit(130)
+    except RuntimeError as error:
+        error_text = str(error).lower()
+        if "cancel" in error_text or "no target directory selected" in error_text:
+            show_cancel_message()
+            sys.exit(130)
+        raise
