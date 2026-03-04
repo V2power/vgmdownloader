@@ -294,6 +294,47 @@ def detect_link_extension(href: str) -> str | None:
     return None
 
 
+def detect_album_formats(album_soup: BeautifulSoup) -> set[str]:
+    page_content = album_soup.find("div", {"id": "pageContent"})
+    if not isinstance(page_content, Tag):
+        return set()
+
+    song_table = page_content.find("table", {"id": "songlist"})
+    if not isinstance(song_table, Tag):
+        return set()
+
+    formats: set[str] = set()
+    for link in song_table.find_all("a"):
+        href = (link.get("href") or "").strip()
+        ext = detect_link_extension(href)
+        if ext:
+            formats.add(ext)
+        if "mp3" in formats and "flac" in formats:
+            break
+    return formats
+
+
+def choose_download_format_for_album(album_soup: BeautifulSoup) -> DownloadFormat:
+    available_formats = detect_album_formats(album_soup)
+    has_mp3 = "mp3" in available_formats
+    has_flac = "flac" in available_formats
+
+    if has_mp3 and has_flac:
+        return ask_download_format()
+
+    if has_mp3:
+        console.print("[yellow]FLAC not available for this album. Using MP3.[/yellow]")
+        return "mp3"
+
+    if has_flac:
+        console.print("[yellow]MP3 not available for this album. Using FLAC.[/yellow]")
+        return "flac"
+
+    # Fallback for unexpected pages.
+    console.print("[yellow]No explicit audio format detected. Using MP3 by default.[/yellow]")
+    return "mp3"
+
+
 def parse_song_title(song_soup: BeautifulSoup, selected_format: DownloadFormat) -> str | None:
     content = song_soup.find("div", {"id": "pageContent"})
     if not isinstance(content, Tag):
@@ -434,8 +475,8 @@ def download_album_tracks(
 def main() -> None:
     ui_header()
     with build_session() as session:
-        selected_format = ask_download_format()
         album_soup = find_album_soup(session)
+        selected_format = choose_download_format_for_album(album_soup)
         page_content = album_soup.find("div", {"id": "pageContent"})
         if not isinstance(page_content, Tag):
             raise RuntimeError("Album page does not contain expected content.")
