@@ -17,7 +17,7 @@ This program uses web scraping with  [BeautifulSoap](https://beautiful-soup-4.re
 
 ## How to compile it
 
-First of all you are going to need [Python](https://www.python.org/) and two depedencies, [BeautifulSoup](https://pypi.org/project/beautifulsoup4/) for the web scrapping and [Requests](https://docs.python-requests.org/en/latest/user/install/#install) to help us with the HTTP requests.
+First of all you are going to need [Python](https://www.python.org/) and four depedencies, [BeautifulSoup](https://pypi.org/project/beautifulsoup4/) for the web scrapping, [Requests](https://docs.python-requests.org/en/latest/user/install/#install) to help us with the HTTP requests and [Rich/Questionary](https://pypi.org/project/questionary/) to give us a prettier CLI.
 
 ```python
 pip install beautifulsoup4
@@ -39,9 +39,13 @@ Search for **"Streets of"** and not the full game name like __"Streets of Rage"_
 
 ### Tips
 
-Download a good music player, in my case I use [MusicBee](https://www.getmusicbee.com/).
+Download a good music player like [MusicBee](https://www.getmusicbee.com/).
 
 ![](https://github.com/V2power/vgmdownloader/blob/main/img/example.png)
+
+[foobar2000](https://www.foobar2000.org/) is also a great option.
+
+![](https://github.com/V2power/vgmdownloader/blob/main/img/foobar2000.png)
 
 Check out my YouTube playlist: [V2's Amazing OSTs Collection](https://www.youtube.com/playlist?list=PLCEnyc2Sz_q6FHjfDSATEsal-UvEjslo_).
 
