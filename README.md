@@ -11,7 +11,9 @@
 
 ## About
 
-This program uses web scraping with  [BeautifulSoap](https://beautiful-soup-4.readthedocs.io/en/latest/) to download OSTs (Original Sound Tracks) from [this site](https://downloads.khinsider.com).
+This program uses web scraping with  [BeautifulSoap](https://beautiful-soup-4.readthedocs.io/en/latest/) to download OSTs (Original Sound Tracks) from [this site](https://downloads.khinsider.com) using only the terminal.
+
+![](https://github.com/V2power/vgmdownloader/blob/main/img/vgmdownloader_terminal.png)
 
 ## How to compile it
 
