@@ -39,11 +39,12 @@ class AlbumOption:
 def ui_header() -> None:
     console.print(
         Panel.fit(
-            "[bold cyan]VGM Downloader CLI[/bold cyan]\n"
-            "[dim]Modern interface for KHInsider album downloads[/dim]",
+            "[bold cyan]VGM Downloader[/bold cyan]\n"
+            "[dim]Modern interface for KHInsider OST downloads[/dim]",
             border_style="cyan",
         )
     )
+    console.print("[dim]Created by V2[/dim]", justify="right")
 
 
 def build_session() -> requests.Session:
@@ -61,6 +62,18 @@ def get_soup(session: requests.Session, url: str) -> BeautifulSoup:
 def sanitize_filename(value: str) -> str:
     sanitized = re.sub(r'[<>:"/\\|?*]', "", value).strip()
     return sanitized.rstrip(".") or "untitled"
+
+
+def strip_track_prefix(title: str) -> str:
+    cleaned = title.strip()
+    # Handles: "01 Name", "01. Name", "01 - Name", "01_Name", "01) Name".
+    pattern = re.compile(r"^\s*\d{1,3}\s*(?:[-._)\]]\s*|\s+)")
+    while True:
+        next_cleaned = pattern.sub("", cleaned, count=1).strip()
+        if next_cleaned == cleaned or not next_cleaned:
+            break
+        cleaned = next_cleaned
+    return cleaned
 
 
 def ensure_unique_path(path: Path) -> Path:
@@ -83,10 +96,10 @@ def extract_title_from_download_url(href: str, fallback_title: str, extension: s
     if decoded_name.lower().endswith(suffix):
         raw_title = decoded_name[: -len(suffix)]
         if raw_title.strip():
-            clean_title = re.sub(r"^\s*\d+\s*[-._)]\s*", "", raw_title).strip()
+            clean_title = strip_track_prefix(raw_title)
             return sanitize_filename(clean_title or raw_title)
 
-    return sanitize_filename(fallback_title)
+    return sanitize_filename(strip_track_prefix(fallback_title) or fallback_title)
 
 
 def ask_game_query() -> str:
@@ -147,15 +160,22 @@ def parse_search_results(search_soup: BeautifulSoup) -> tuple[str, str, list[Alb
 
 def choose_album(options: list[AlbumOption], result_text: str) -> AlbumOption:
     table = Table(title=result_text or "Album Results", show_header=True, header_style="bold cyan")
-    table.add_column("#", style="bold")
+    table.add_column("#", style="bold", width=4)
     table.add_column("Album")
     for index, option in enumerate(options, start=1):
         table.add_row(str(index), option.name)
     console.print(table)
 
-    choice_labels = [f"{idx}. {opt.name}" for idx, opt in enumerate(options, start=1)]
-    selected = questionary.select("Select album:", choices=choice_labels).ask()
-    selected_idx = int(selected.split(".", 1)[0]) - 1
+    choices = [f"{idx:>3} | {opt.name}" for idx, opt in enumerate(options, start=1)]
+    selected = questionary.select(
+        "Select album:",
+        choices=choices,
+        use_shortcuts=False,
+    ).ask()
+    if not selected:
+        raise RuntimeError("Album selection was cancelled.")
+
+    selected_idx = int(selected.split("|", 1)[0].strip()) - 1
     return options[selected_idx]
 
 
@@ -253,23 +273,49 @@ def iter_song_pages(song_table: Tag) -> Iterable[str]:
     seen: set[str] = set()
     for link in song_table.find_all("a"):
         href = (link.get("href") or "").strip()
-        if not href or href in seen:
+        if not href:
             continue
-        if "mp3" not in href and "flac" not in href:
+        ext = detect_link_extension(href)
+        if not ext:
             continue
-        seen.add(href)
+        normalized = re.sub(r"\.(mp3|flac)$", "", href, flags=re.IGNORECASE)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
         yield href
 
 
-def parse_song_title(song_soup: BeautifulSoup) -> str | None:
+def detect_link_extension(href: str) -> str | None:
+    href_lower = href.lower()
+    if ".flac" in href_lower or "flac" in href_lower:
+        return "flac"
+    if ".mp3" in href_lower or "mp3" in href_lower:
+        return "mp3"
+    return None
+
+
+def parse_song_title(song_soup: BeautifulSoup, selected_format: DownloadFormat) -> str | None:
     content = song_soup.find("div", {"id": "pageContent"})
     if not isinstance(content, Tag):
         return None
 
+    preferred = ["mp3", "flac"] if selected_format == "mp3" else ["flac", "mp3"]
+    if selected_format == "both":
+        preferred = ["flac", "mp3"]
+
+    # Prefer extracting the track title from the download URL itself.
+    for wanted_ext in preferred:
+        for link in content.find_all("a"):
+            href = (link.get("href") or "").strip()
+            ext = detect_link_extension(href)
+            if not ext or ext != wanted_ext:
+                continue
+            return extract_title_from_download_url(href, "untitled", ext)
+
     bold_tags = content.find_all("b")
     if len(bold_tags) < 2:
         return None
-    return bold_tags[1].get_text(strip=True)
+    return strip_track_prefix(bold_tags[1].get_text(strip=True))
 
 
 def download_song_files(
@@ -280,6 +326,7 @@ def download_song_files(
     mp3_dir: Path | None,
     flac_dir: Path | None,
     selected_format: DownloadFormat,
+    track_index: int,
 ) -> int:
     page_content = song_soup.find("div", {"id": "pageContent"})
     if not isinstance(page_content, Tag):
@@ -291,8 +338,8 @@ def download_song_files(
         if "mp3" not in href and "flac" not in href:
             continue
 
-        href_lower = href.lower()
-        if ".flac" in href_lower or "flac" in href_lower:
+        ext = detect_link_extension(href)
+        if ext == "flac":
             extension = "flac"
             if selected_format == "both":
                 if flac_dir is None:
@@ -300,7 +347,7 @@ def download_song_files(
                 target_dir = flac_dir
             else:
                 target_dir = album_dir
-        elif ".mp3" in href_lower or "mp3" in href_lower:
+        elif ext == "mp3":
             extension = "mp3"
             if selected_format == "both":
                 if mp3_dir is None:
@@ -321,10 +368,12 @@ def download_song_files(
             console.print(f"[red]Failed:[/red] {song_title} ({extension}) -> {error}")
             continue
 
-        base_title = extract_title_from_download_url(href, song_title, extension)
-        destination = ensure_unique_path(target_dir / f"{base_title}.{extension}")
+        base_title = strip_track_prefix(extract_title_from_download_url(href, song_title, extension))
+        numbered_title = f"{track_index:02d}. {base_title}"
+        destination = ensure_unique_path(target_dir / f"{numbered_title}.{extension}")
         destination.write_bytes(response.content)
-        console.print(f"[green]Saved:[/green] {destination.name}")
+        output_name = f"{numbered_title}.{extension}"
+        console.print(f"[green]Saved:[/green] {output_name}")
         downloaded += 1
 
     return downloaded
@@ -349,6 +398,7 @@ def download_album_tracks(
         return 0
 
     total_downloaded = 0
+    track_index = 1
     for song_href in iter_song_pages(song_table):
         try:
             song_soup = get_soup(session, urljoin(BASE_URL, song_href))
@@ -356,21 +406,27 @@ def download_album_tracks(
             console.print(f"[yellow]Could not open song page:[/yellow] {song_href} ({error})")
             continue
 
-        song_title = parse_song_title(song_soup)
+        song_title = parse_song_title(song_soup, selected_format)
         if not song_title:
             console.print(f"[yellow]Could not identify title for:[/yellow] {song_href}")
             continue
 
-        console.print(f"[cyan]Track:[/cyan] {song_title}")
-        total_downloaded += download_song_files(
+        clean_song_title = strip_track_prefix(song_title)
+        console.print(f"[cyan]Track:[/cyan] {clean_song_title}")
+        downloaded_for_track = download_song_files(
             session,
             song_soup,
-            song_title,
+            clean_song_title,
             album_dir,
             mp3_dir,
             flac_dir,
             selected_format,
+            track_index,
         )
+        total_downloaded += downloaded_for_track
+        if downloaded_for_track > 0:
+            console.print()
+        track_index += 1
 
     return total_downloaded
 
@@ -393,6 +449,7 @@ def main() -> None:
 
         album_dir, mp3_dir, flac_dir = prepare_directories(album_title, selected_format)
         download_album_cover(session, album_soup, album_dir)
+        console.print(f"[bold cyan]Album:[/bold cyan] {album_title}\n")
         downloaded_count = download_album_tracks(
             session,
             album_soup,
