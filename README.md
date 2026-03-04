@@ -22,6 +22,7 @@ First of all you are going to need [Python](https://www.python.org/) and two dep
 ```python
 pip install beautifulsoup4
 pip install requests
+pip install rich questionary
 ```
 
 Now you're ready to run the program!
