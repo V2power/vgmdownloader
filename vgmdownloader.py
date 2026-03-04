@@ -286,15 +286,19 @@ def iter_song_pages(song_table: Tag) -> Iterable[str]:
 
 
 def detect_link_extension(href: str) -> str | None:
-    href_lower = href.lower()
-    if ".flac" in href_lower or "flac" in href_lower:
+    href_lower = href.lower().strip()
+    parsed_path = urlparse(href_lower).path
+    has_flac_token = re.search(r"(^|[\/._-])flac([\/._-]|$)", parsed_path) is not None
+    has_mp3_token = re.search(r"(^|[\/._-])mp3([\/._-]|$)", parsed_path) is not None
+
+    if parsed_path.endswith(".flac") or "format=flac" in href_lower or has_flac_token:
         return "flac"
-    if ".mp3" in href_lower or "mp3" in href_lower:
+    if parsed_path.endswith(".mp3") or "format=mp3" in href_lower or has_mp3_token:
         return "mp3"
     return None
 
 
-def detect_album_formats(album_soup: BeautifulSoup) -> set[str]:
+def detect_album_formats(session: requests.Session, album_soup: BeautifulSoup) -> set[str]:
     page_content = album_soup.find("div", {"id": "pageContent"})
     if not isinstance(page_content, Tag):
         return set()
@@ -304,18 +308,56 @@ def detect_album_formats(album_soup: BeautifulSoup) -> set[str]:
         return set()
 
     formats: set[str] = set()
+    song_page_candidates: list[str] = []
+    seen_candidates: set[str] = set()
+
     for link in song_table.find_all("a"):
         href = (link.get("href") or "").strip()
+        if not href:
+            continue
+
         ext = detect_link_extension(href)
         if ext:
             formats.add(ext)
+
+        # Keep internal KHInsider pages as candidates to inspect per-track links.
+        # Some albums expose one format in the table and the other inside track pages.
+        if "/game-soundtracks/" in href and href not in seen_candidates:
+            seen_candidates.add(href)
+            song_page_candidates.append(href)
+
+    if "mp3" in formats and "flac" in formats:
+        return formats
+
+    # Some album pages expose only one format in the table and the other
+    # (usually FLAC) only inside each track page. Inspect a few track pages.
+    for song_href in song_page_candidates[:20]:
+        try:
+            song_soup = get_soup(session, urljoin(BASE_URL, song_href))
+        except requests.RequestException:
+            continue
+
+        song_content = song_soup.find("div", {"id": "pageContent"})
+        if not isinstance(song_content, Tag):
+            continue
+
+        for file_link in song_content.find_all("a"):
+            file_href = (file_link.get("href") or "").strip()
+            ext = detect_link_extension(file_href)
+            if ext:
+                formats.add(ext)
+
         if "mp3" in formats and "flac" in formats:
             break
+
     return formats
 
 
-def choose_download_format_for_album(album_soup: BeautifulSoup) -> DownloadFormat:
-    available_formats = detect_album_formats(album_soup)
+def choose_download_format_for_album(
+    session: requests.Session,
+    album_soup: BeautifulSoup,
+) -> DownloadFormat:
+    available_formats = detect_album_formats(session, album_soup)
     has_mp3 = "mp3" in available_formats
     has_flac = "flac" in available_formats
 
@@ -476,7 +518,7 @@ def main() -> None:
     ui_header()
     with build_session() as session:
         album_soup = find_album_soup(session)
-        selected_format = choose_download_format_for_album(album_soup)
+        selected_format = choose_download_format_for_album(session, album_soup)
         page_content = album_soup.find("div", {"id": "pageContent"})
         if not isinstance(page_content, Tag):
             raise RuntimeError("Album page does not contain expected content.")
