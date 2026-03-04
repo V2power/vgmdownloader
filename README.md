@@ -11,7 +11,7 @@
 
 ## About
 
-This program uses web scraping with  [BeautifulSoap](https://beautiful-soup-4.readthedocs.io/en/latest/) to download OSTs (Original Sound Tracks) from [this site](https://downloads.khinsider.com) using only the terminal.
+This program uses web scraping with  [BeautifulSoap](https://beautiful-soup-4.readthedocs.io/en/latest/) to download **OSTs (Original Sound Track)** from [this site](https://downloads.khinsider.com) using only the terminal.
 
 ![](https://github.com/V2power/vgmdownloader/blob/main/img/vgmdownloader_terminal.png)
 
@@ -23,6 +23,25 @@ First of all you are going to need [Python](https://www.python.org/) and four de
 pip install beautifulsoup4
 pip install requests
 pip install rich questionary
+```
+
+### Or create an **virtual enviroment** and install everything with the ``requirements.txt``.
+
+Create and virtual enviroment:
+```python
+python -m venv venv
+```
+
+Activate the ``venv`` _(will change depending on the OS)_:
+```python
+venv\Scripts\activate #CMD
+.\venv\Scripts\Activate.ps1 #PowerShell
+source venv/bin/activate #Linux
+```
+
+Install all dependencies with ``pip install``:
+```python
+pip install -r requirements.txt
 ```
 
 Now you're ready to run the program!
@@ -48,7 +67,6 @@ Download a good music player like [MusicBee](https://www.getmusicbee.com/).
 ![](https://github.com/V2power/vgmdownloader/blob/main/img/foobar2000.png)
 
 Check out my YouTube playlist: [V2's Amazing OSTs Collection](https://www.youtube.com/playlist?list=PLCEnyc2Sz_q6FHjfDSATEsal-UvEjslo_).
-
 I've choose only the best of the bests. There is some bangers in this collection, I hope you like it!
 
 Now enjoy those old but awesome tracks! 😄
