@@ -257,29 +257,72 @@ def prepare_directories(
     return album_dir, mp3_dir, flac_dir
 
 
-def download_album_cover(
+def ask_download_images() -> bool:
+    selected = questionary.confirm(
+        "Download album images?",
+        default=True,
+    ).ask()
+    if selected is None:
+        raise KeyboardInterrupt
+    return bool(selected)
+
+
+def download_album_images(
     session: requests.Session,
     album_soup: BeautifulSoup,
     album_dir: Path,
 ) -> None:
-    image_tag = album_soup.find("img")
-    if not isinstance(image_tag, Tag):
-        console.print("[dim]No album cover found.[/dim]")
+    page_content = album_soup.find("div", {"id": "pageContent"})
+    if not isinstance(page_content, Tag):
+        console.print("[dim]No album images found.[/dim]")
         return
 
-    image_src = image_tag.get("src")
-    if not image_src:
-        console.print("[dim]No album cover found.[/dim]")
+    image_urls: list[str] = []
+    seen_urls: set[str] = set()
+    # Some pages use class="albumImage" on <img>, others on the parent/link.
+    image_tags = page_content.select("img.albumImage, .albumImage img")
+    for image_tag in image_tags:
+        src = (image_tag.get("src") or "").strip()
+        if not src:
+            continue
+
+        image_url = urljoin(BASE_URL, src)
+        parent = image_tag.parent
+        if isinstance(parent, Tag) and parent.name == "a":
+            href = (parent.get("href") or "").strip()
+            href_path = urlparse(href).path.lower()
+            if href and re.search(r"\.(jpg|jpeg|png|webp|gif|bmp)$", href_path):
+                image_url = urljoin(BASE_URL, href)
+
+        if image_url in seen_urls:
+            continue
+        seen_urls.add(image_url)
+        image_urls.append(image_url)
+
+    if not image_urls:
+        console.print("[dim]No album images found.[/dim]")
         return
 
-    try:
-        console.print("[cyan]Downloading album cover...[/cyan]")
-        response = session.get(urljoin(BASE_URL, image_src), timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        (album_dir / "Cover.jpg").write_bytes(response.content)
-        console.print("[green]Album cover saved.[/green]")
-    except requests.RequestException as error:
-        console.print(f"[yellow]Could not download album cover:[/yellow] {error}")
+    console.print(f"[cyan]Downloading album images ({len(image_urls)})...[/cyan]")
+    downloaded = 0
+    for index, image_url in enumerate(image_urls, start=1):
+        try:
+            response = session.get(image_url, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+        except requests.RequestException as error:
+            console.print(f"[yellow]Could not download image:[/yellow] {image_url} ({error})")
+            continue
+
+        original_name = unquote(Path(urlparse(image_url).path).name).strip()
+        file_name = sanitize_filename(original_name) if original_name else f"Image {index:02d}.jpg"
+        destination = ensure_unique_path(album_dir / file_name)
+        destination.write_bytes(response.content)
+        downloaded += 1
+
+    if downloaded == 0:
+        console.print("[yellow]No album images could be downloaded.[/yellow]")
+    else:
+        console.print(f"[green]Album images saved:[/green] {downloaded}")
 
 
 def iter_song_pages(song_table: Tag) -> Iterable[str]:
@@ -544,7 +587,8 @@ def main() -> None:
         )
 
         album_dir, mp3_dir, flac_dir = prepare_directories(album_title, selected_format)
-        download_album_cover(session, album_soup, album_dir)
+        if ask_download_images():
+            download_album_images(session, album_soup, album_dir)
         console.print(f"[bold cyan]Album:[/bold cyan] {album_title}\n")
         downloaded_count = download_album_tracks(
             session,
