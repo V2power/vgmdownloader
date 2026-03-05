@@ -44,6 +44,8 @@ console = Console()
 class AlbumOption:
     name: str
     relative_url: str
+    platform: str = "-"
+    album_type: str = "-"
 
 
 def ui_header() -> None:
@@ -84,9 +86,19 @@ def get_soup(session: requests.Session, url: str) -> BeautifulSoup:
     return BeautifulSoup(response.text, "html.parser")
 
 
+def sanitize_title_text(value: str) -> str:
+    sanitized = re.sub(r'[<>:"/\\|?*]', "-", value).strip()
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+    return sanitized or "untitled"
+
+
 def sanitize_filename(value: str) -> str:
-    sanitized = re.sub(r'[<>:"/\\|?*]', "", value).strip()
-    return sanitized.rstrip(".") or "untitled"
+    sanitized = sanitize_title_text(value).rstrip(". ")
+    return sanitized or "untitled"
+
+
+def normalize_comma_spacing(value: str) -> str:
+    return re.sub(r"\s*,\s*", ", ", value).strip()
 
 
 def strip_track_prefix(title: str) -> str:
@@ -182,18 +194,79 @@ def parse_search_results(search_soup: BeautifulSoup) -> tuple[str, str, list[Alb
 
     if isinstance(album_table, Tag):
         seen: set[str] = set()
-        for link in album_table.find_all("a"):
-            if not isinstance(link, Tag):
+        for row in album_table.find_all("tr"):
+            if not isinstance(row, Tag):
                 continue
-            href = get_tag_attr_text(link, "href")
-            if not href.startswith("/game-soundtracks/album/"):
-                continue
-            if href in seen:
+            cells = row.find_all("td")
+            if not cells:
                 continue
 
-            seen.add(href)
-            album_name = href.removeprefix("/game-soundtracks/album/").replace("-", " ")
-            options.append(AlbumOption(name=album_name, relative_url=href))
+            album_href = ""
+            album_name = ""
+            album_col_index = -1
+
+            for cell_index, cell in enumerate(cells):
+                for link in cell.find_all("a"):
+                    if not isinstance(link, Tag):
+                        continue
+                    href = get_tag_attr_text(link, "href")
+                    if not href.startswith("/game-soundtracks/album/"):
+                        continue
+
+                    link_name = link.get_text(" ", strip=True)
+                    if link_name:
+                        album_href = href
+                        album_name = link_name
+                        album_col_index = cell_index
+                        break
+
+                    if not album_href:
+                        # Fallback when the first album link is an image without text.
+                        album_href = href
+                        album_col_index = cell_index
+                if album_name:
+                    break
+
+            if not album_href:
+                continue
+
+            if album_href in seen:
+                continue
+
+            seen.add(album_href)
+            if not album_name:
+                album_name = album_href.removeprefix("/game-soundtracks/album/").replace("-", " ")
+
+            platform_idx = album_col_index + 1
+            type_idx = album_col_index + 2
+            platform = cells[platform_idx].get_text(" ", strip=True) if len(cells) > platform_idx else "-"
+            album_type = cells[type_idx].get_text(" ", strip=True) if len(cells) > type_idx else "-"
+            platform = normalize_comma_spacing(platform) if platform else "-"
+            album_type = normalize_comma_spacing(album_type) if album_type else "-"
+            options.append(
+                AlbumOption(
+                    name=album_name,
+                    relative_url=album_href,
+                    platform=platform,
+                    album_type=album_type,
+                )
+            )
+
+        if not options:
+            for link in album_table.find_all("a"):
+                if not isinstance(link, Tag):
+                    continue
+                href = get_tag_attr_text(link, "href")
+                if not href.startswith("/game-soundtracks/album/"):
+                    continue
+                if href in seen:
+                    continue
+
+                seen.add(href)
+                album_name = link.get_text(" ", strip=True) or (
+                    href.removeprefix("/game-soundtracks/album/").replace("-", " ")
+                )
+                options.append(AlbumOption(name=album_name, relative_url=href))
 
     return result_text, heading, options
 
@@ -201,14 +274,19 @@ def parse_search_results(search_soup: BeautifulSoup) -> tuple[str, str, list[Alb
 def choose_album(options: list[AlbumOption], result_text: str) -> AlbumOption | None:
     clear_console()
     table = Table(title=result_text or "Album Results", show_header=True, header_style="bold cyan")
-    table.add_column("#", style="bold", width=4)
-    table.add_column("Album")
+    table.add_column("#", style="bold", width=3)
+    table.add_column("Album", overflow="fold")
+    table.add_column("Platform")
+    table.add_column("Type")
     for index, option in enumerate(options, start=1):
-        table.add_row(str(index), option.name)
+        table.add_row(str(index), option.name, option.platform, option.album_type)
     console.print(table)
 
     back_choice = "< Back to search menu"
-    choices = [f"{idx:>3} | {opt.name}" for idx, opt in enumerate(options, start=1)]
+    choices = [
+        f"{idx:>3} | {opt.name} | {opt.platform} | {opt.album_type}"
+        for idx, opt in enumerate(options, start=1)
+    ]
     choices.append(back_choice)
     selected = questionary.select(
         "Select album:",
@@ -351,21 +429,24 @@ def download_album_images(
         console.print("[dim]No album images found.[/dim]")
         return
 
-    console.print(f"[cyan]Downloading album images ({len(image_urls)})...[/cyan]")
     downloaded = 0
-    for index, image_url in enumerate(image_urls, start=1):
-        try:
-            response = session.get(image_url, timeout=REQUEST_TIMEOUT)
-            response.raise_for_status()
-        except requests.RequestException as error:
-            console.print(f"[yellow]Could not download image:[/yellow] {image_url} ({error})")
-            continue
+    with console.status(
+        f"[bold cyan]Downloading album images ({len(image_urls)})...[/bold cyan]",
+        spinner="dots",
+    ):
+        for index, image_url in enumerate(image_urls, start=1):
+            try:
+                response = session.get(image_url, timeout=REQUEST_TIMEOUT)
+                response.raise_for_status()
+            except requests.RequestException as error:
+                console.print(f"[yellow]Could not download image:[/yellow] {image_url} ({error})")
+                continue
 
-        original_name = unquote(Path(urlparse(image_url).path).name).strip()
-        file_name = sanitize_filename(original_name) if original_name else f"Image {index:02d}.jpg"
-        destination = ensure_unique_path(album_dir / file_name)
-        destination.write_bytes(response.content)
-        downloaded += 1
+            original_name = unquote(Path(urlparse(image_url).path).name).strip()
+            file_name = sanitize_filename(original_name) if original_name else f"Image {index:02d}.jpg"
+            destination = ensure_unique_path(album_dir / file_name)
+            destination.write_bytes(response.content)
+            downloaded += 1
 
     if downloaded == 0:
         console.print("[yellow]No album images could be downloaded.[/yellow]")
