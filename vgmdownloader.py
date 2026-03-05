@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import re
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Literal
@@ -53,6 +55,10 @@ def ui_header() -> None:
         )
     )
     console.print("[dim]Created by V2[/dim]", justify="right")
+
+
+def clear_console() -> None:
+    os.system("cls" if os.name == "nt" else "clear")
 
 
 def show_cancel_message() -> None:
@@ -190,7 +196,8 @@ def parse_search_results(search_soup: BeautifulSoup) -> tuple[str, str, list[Alb
     return result_text, heading, options
 
 
-def choose_album(options: list[AlbumOption], result_text: str) -> AlbumOption:
+def choose_album(options: list[AlbumOption], result_text: str) -> AlbumOption | None:
+    clear_console()
     table = Table(title=result_text or "Album Results", show_header=True, header_style="bold cyan")
     table.add_column("#", style="bold", width=4)
     table.add_column("Album")
@@ -198,7 +205,9 @@ def choose_album(options: list[AlbumOption], result_text: str) -> AlbumOption:
         table.add_row(str(index), option.name)
     console.print(table)
 
+    back_choice = "< Back to search menu"
     choices = [f"{idx:>3} | {opt.name}" for idx, opt in enumerate(options, start=1)]
+    choices.append(back_choice)
     selected = questionary.select(
         "Select album:",
         choices=choices,
@@ -206,6 +215,8 @@ def choose_album(options: list[AlbumOption], result_text: str) -> AlbumOption:
     ).ask()
     if not selected:
         raise RuntimeError("Album selection was cancelled.")
+    if selected == back_choice:
+        return None
 
     selected_idx = int(selected.split("|", 1)[0].strip()) - 1
     return options[selected_idx]
@@ -234,6 +245,10 @@ def find_album_soup(session: requests.Session) -> BeautifulSoup:
 
         if heading == "Search" and options:
             selected = choose_album(options, result_text)
+            if selected is None:
+                console.print("[dim]Returning to search menu...[/dim]")
+                continue
+            clear_console()
             return get_soup(session, urljoin(BASE_URL, selected.relative_url))
 
         if heading:
@@ -649,8 +664,17 @@ def main() -> None:
                 )
             )
             if not ask_download_another_album():
+                console.print(
+                    Panel.fit(
+                        "[bold cyan]Thank you for using VGM Downloader![/bold cyan]\n"
+                        "[dim]The program will close in 5 seconds...[/dim]",
+                        border_style="cyan",
+                    )
+                )
+                time.sleep(5)
                 break
-            console.print()
+            clear_console()
+            ui_header()
 
 
 if __name__ == "__main__":
