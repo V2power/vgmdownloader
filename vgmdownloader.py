@@ -156,6 +156,8 @@ def ask_download_format() -> DownloadFormat:
         ],
         default="MP3 only",
     ).ask()
+    if selected is None:
+        raise KeyboardInterrupt
 
     if selected == "FLAC only":
         return "flac"
@@ -461,11 +463,19 @@ def detect_album_formats(session: requests.Session, album_soup: BeautifulSoup) -
     return formats
 
 
+def detect_album_formats_with_loading(
+    session: requests.Session,
+    album_soup: BeautifulSoup,
+) -> set[str]:
+    with console.status("[bold cyan]Checking audio files...[/bold cyan]", spinner="dots"):
+        return detect_album_formats(session, album_soup)
+
+
 def choose_download_format_for_album(
     session: requests.Session,
     album_soup: BeautifulSoup,
 ) -> DownloadFormat:
-    available_formats = detect_album_formats(session, album_soup)
+    available_formats = detect_album_formats_with_loading(session, album_soup)
     has_mp3 = "mp3" in available_formats
     has_flac = "flac" in available_formats
 
