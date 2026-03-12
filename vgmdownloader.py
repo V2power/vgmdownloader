@@ -26,7 +26,7 @@ try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
-except Exception as error:
+except ImportError as error:
     print(f"Import failure: {type(error).__name__}: {error}")
     sys.exit(1)
 
@@ -36,9 +36,13 @@ USER_AGENT = (
     "Gecko/20100101 Firefox/140.0"
 )
 REQUEST_TIMEOUT = 30
+IMAGE_EXT_RE = re.compile(r"\.(jpg|jpeg|png|webp|gif|bmp)$", re.IGNORECASE)
 DownloadFormat = Literal["mp3", "flac", "both"]
 console = Console()
 
+
+class UserCancelledError(RuntimeError):
+    pass
 
 @dataclass(frozen=True)
 class AlbumOption:
@@ -46,6 +50,13 @@ class AlbumOption:
     relative_url: str
     platform: str = "-"
     album_type: str = "-"
+
+
+
+@dataclass(frozen=True)
+class TrackEntry:
+    title: str
+    source_href: str
 
 
 def ui_header() -> None:
@@ -80,8 +91,12 @@ def build_session() -> requests.Session:
     return session
 
 
-def get_soup(session: requests.Session, url: str) -> BeautifulSoup:
-    response = session.get(url, timeout=REQUEST_TIMEOUT)
+def get_soup(
+    session: requests.Session,
+    url: str,
+    params: dict[str, str] | None = None,
+) -> BeautifulSoup:
+    response = session.get(url, params=params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     return BeautifulSoup(response.text, "html.parser")
 
@@ -179,8 +194,8 @@ def ask_download_format() -> DownloadFormat:
 
 
 def search_album_page(session: requests.Session, query: str) -> BeautifulSoup:
-    url = f"{BASE_URL}search?search={query.replace(' ', '+').lower()}"
-    return get_soup(session, url)
+    search_url = urljoin(BASE_URL, "search")
+    return get_soup(session, search_url, params={"search": query})
 
 
 def parse_search_results(search_soup: BeautifulSoup) -> tuple[str, str, list[AlbumOption]]:
@@ -294,7 +309,7 @@ def choose_album(options: list[AlbumOption], result_text: str) -> AlbumOption | 
         use_shortcuts=False,
     ).ask()
     if not selected:
-        raise RuntimeError("Album selection was cancelled.")
+        raise UserCancelledError("Album selection was cancelled.")
     if selected == back_choice:
         return None
 
@@ -347,9 +362,9 @@ def prepare_directories(
         only_directories=True,
     ).ask()
     if not parent:
-        raise RuntimeError("No target directory selected.")
+        raise UserCancelledError("No target directory selected.")
 
-    parent_dir = Path(parent.replace("¥", "/")).expanduser()
+    parent_dir = Path(parent).expanduser()
     album_dir = parent_dir / sanitize_filename(album_title)
     mp3_dir: Path | None = None
     flac_dir: Path | None = None
@@ -371,9 +386,9 @@ def prepare_directories(
     return album_dir, mp3_dir, flac_dir
 
 
-def ask_download_images() -> bool:
+def ask_download_images(image_count: int) -> bool:
     selected = questionary.confirm(
-        "Download album images?",
+        f"Found {image_count} album image(s). Download images?",
         default=True,
     ).ask()
     if selected is None:
@@ -391,23 +406,34 @@ def ask_download_another_album() -> bool:
     return bool(selected)
 
 
-def download_album_images(
-    session: requests.Session,
-    album_soup: BeautifulSoup,
-    album_dir: Path,
-) -> None:
+def collect_album_image_urls(album_soup: BeautifulSoup) -> list[str]:
     page_content = album_soup.find("div", {"id": "pageContent"})
     if not isinstance(page_content, Tag):
-        console.print("[dim]No album images found.[/dim]")
-        return
+        return []
 
     image_urls: list[str] = []
     seen_urls: set[str] = set()
-    # Some pages use class="albumImage" on <img>, others on the parent/link.
-    image_tags = page_content.select("img.albumImage, .albumImage img")
-    for image_tag in image_tags:
+
+    # Faster than CSS selectors on large pages and still supports both patterns:
+    # class on <img> and class on the parent container.
+    direct_tags = page_content.find_all("img", class_="albumImage")
+    container_tags = page_content.find_all(class_="albumImage")
+
+    ordered_tags: list[Tag] = []
+    seen_tag_ids: set[int] = set()
+    for candidate in [*direct_tags, *container_tags]:
+        if not isinstance(candidate, Tag):
+            continue
+        image_tag = candidate if candidate.name == "img" else candidate.find("img")
         if not isinstance(image_tag, Tag):
             continue
+        tag_id = id(image_tag)
+        if tag_id in seen_tag_ids:
+            continue
+        seen_tag_ids.add(tag_id)
+        ordered_tags.append(image_tag)
+
+    for image_tag in ordered_tags:
         src = get_tag_attr_text(image_tag, "src")
         if not src:
             continue
@@ -417,7 +443,7 @@ def download_album_images(
         if isinstance(parent, Tag) and parent.name == "a":
             href = get_tag_attr_text(parent, "href")
             href_path = urlparse(href).path.lower()
-            if href and re.search(r"\.(jpg|jpeg|png|webp|gif|bmp)$", href_path):
+            if href and IMAGE_EXT_RE.search(href_path):
                 image_url = urljoin(BASE_URL, href)
 
         if image_url in seen_urls:
@@ -425,6 +451,14 @@ def download_album_images(
         seen_urls.add(image_url)
         image_urls.append(image_url)
 
+    return image_urls
+
+
+def download_album_images(
+    session: requests.Session,
+    image_urls: list[str],
+    album_dir: Path,
+) -> None:
     if not image_urls:
         console.print("[dim]No album images found.[/dim]")
         return
@@ -621,8 +655,6 @@ def download_song_files(
         if not isinstance(link, Tag):
             continue
         href = get_tag_attr_text(link, "href")
-        if "mp3" not in href and "flac" not in href:
-            continue
 
         ext = detect_link_extension(href)
         if ext == "flac":
@@ -665,39 +697,98 @@ def download_song_files(
     return downloaded
 
 
+def infer_track_title_from_href(song_href: str) -> str:
+    parsed_name = unquote(Path(urlparse(song_href).path).name).strip()
+    if not parsed_name:
+        return "untitled"
+
+    no_ext = re.sub(r"\.(mp3|flac)$", "", parsed_name, flags=re.IGNORECASE)
+    no_format_suffix = re.sub(r"(?i)([-_ .])(mp3|flac)$", "", no_ext)
+    normalized = no_format_suffix.replace("_", " ").replace("-", " ").strip()
+    clean = strip_track_prefix(normalized) or strip_track_prefix(no_ext) or parsed_name
+    return sanitize_filename(clean)
+
+
+def collect_album_tracks(album_soup: BeautifulSoup) -> list[TrackEntry]:
+    page_content = album_soup.find("div", {"id": "pageContent"})
+    if not isinstance(page_content, Tag):
+        console.print("[red]Could not parse album page.[/red]")
+        return []
+
+    song_table = page_content.find("table", {"id": "songlist"})
+    if not isinstance(song_table, Tag):
+        console.print("[red]No song list found for this album.[/red]")
+        return []
+
+    tracks: list[TrackEntry] = []
+    seen: set[str] = set()
+
+    for row in song_table.find_all("tr"):
+        if not isinstance(row, Tag):
+            continue
+
+        selected_href = ""
+        selected_title = ""
+        for link in row.find_all("a"):
+            if not isinstance(link, Tag):
+                continue
+
+            href = get_tag_attr_text(link, "href")
+            if not detect_link_extension(href):
+                continue
+
+            normalized_href = re.sub(r"\.(mp3|flac)$", "", href, flags=re.IGNORECASE)
+            if normalized_href in seen:
+                continue
+
+            selected_href = href
+            link_text = strip_track_prefix(link.get_text(" ", strip=True))
+            if link_text and link_text.lower() not in {"mp3", "flac"}:
+                selected_title = link_text
+            break
+
+        if not selected_href:
+            continue
+
+        normalized_href = re.sub(r"\.(mp3|flac)$", "", selected_href, flags=re.IGNORECASE)
+        seen.add(normalized_href)
+
+        title = selected_title or infer_track_title_from_href(selected_href)
+        tracks.append(TrackEntry(title=title, source_href=selected_href))
+
+    if tracks:
+        return tracks
+
+    # Fallback for unusual pages: recover links using existing iterator.
+    for song_href in iter_song_pages(song_table):
+        title = infer_track_title_from_href(song_href)
+        tracks.append(TrackEntry(title=title, source_href=song_href))
+
+    return tracks
+
+
 def download_album_tracks(
     session: requests.Session,
-    album_soup: BeautifulSoup,
+    tracks: list[TrackEntry],
     album_dir: Path,
     mp3_dir: Path | None,
     flac_dir: Path | None,
     selected_format: DownloadFormat,
 ) -> int:
-    page_content = album_soup.find("div", {"id": "pageContent"})
-    if not isinstance(page_content, Tag):
-        console.print("[red]Could not parse album page.[/red]")
-        return 0
-
-    song_table = page_content.find("table", {"id": "songlist"})
-    if not isinstance(song_table, Tag):
-        console.print("[red]No song list found for this album.[/red]")
+    if not tracks:
+        console.print("[yellow]No songs available to download.[/yellow]")
         return 0
 
     total_downloaded = 0
-    track_index = 1
-    for song_href in iter_song_pages(song_table):
+    for track_index, track in enumerate(tracks, start=1):
         try:
-            song_soup = get_soup(session, urljoin(BASE_URL, song_href))
+            song_soup = get_soup(session, urljoin(BASE_URL, track.source_href))
         except requests.RequestException as error:
-            console.print(f"[yellow]Could not open song page:[/yellow] {song_href} ({error})")
+            console.print(f"[yellow]Could not open song page:[/yellow] {track.source_href} ({error})")
             continue
 
-        song_title = parse_song_title(song_soup, selected_format)
-        if not song_title:
-            console.print(f"[yellow]Could not identify title for:[/yellow] {song_href}")
-            continue
-
-        clean_song_title = strip_track_prefix(song_title)
+        parsed_title = parse_song_title(song_soup, selected_format)
+        clean_song_title = strip_track_prefix(parsed_title or track.title)
         console.print(f"[cyan]Track:[/cyan] {clean_song_title}")
         downloaded_for_track = download_song_files(
             session,
@@ -712,9 +803,31 @@ def download_album_tracks(
         total_downloaded += downloaded_for_track
         if downloaded_for_track > 0:
             console.print()
-        track_index += 1
 
     return total_downloaded
+
+
+def confirm_album_download(album_title: str, tracks: list[TrackEntry]) -> bool:
+    if not tracks:
+        console.print("[yellow]No playable tracks found for this album.[/yellow]")
+        return False
+
+    console.print(f"[bold cyan]Album:[/bold cyan] {album_title}")
+    console.print(f"[bold cyan]Tracks found:[/bold cyan] {len(tracks)}")
+    playlist = Table(title="Playlist", show_header=True, header_style="bold cyan")
+    playlist.add_column("#", style="bold", width=4)
+    playlist.add_column("Song", overflow="fold")
+    for index, track in enumerate(tracks, start=1):
+        playlist.add_row(str(index), track.title)
+    console.print(playlist)
+
+    selected = questionary.confirm(
+        "Do you want to download this album?",
+        default=True,
+    ).ask()
+    if selected is None:
+        raise KeyboardInterrupt
+    return bool(selected)
 
 
 def main() -> None:
@@ -734,13 +847,36 @@ def main() -> None:
                 else "Unknown Album"
             )
 
+            tracks = collect_album_tracks(album_soup)
+            if not confirm_album_download(album_title, tracks):
+                console.print("[yellow]Album download canceled by user.[/yellow]")
+                if not ask_download_another_album():
+                    console.print(
+                        Panel.fit(
+                            "[bold cyan]Thank you for using VGM Downloader![/bold cyan]\n"
+                            "[dim]The program will close in 5 seconds...[/dim]",
+                            border_style="cyan",
+                        )
+                    )
+                    time.sleep(5)
+                    break
+                clear_console()
+                ui_header()
+                continue
+
             album_dir, mp3_dir, flac_dir = prepare_directories(album_title, selected_format)
-            if ask_download_images():
-                download_album_images(session, album_soup, album_dir)
-            console.print(f"[bold cyan]Album:[/bold cyan] {album_title}\n")
+            image_urls = collect_album_image_urls(album_soup)
+            if image_urls:
+                console.print(f"[bold cyan]Album images found:[/bold cyan] {len(image_urls)}")
+                if ask_download_images(len(image_urls)):
+                    download_album_images(session, image_urls, album_dir)
+            else:
+                console.print("[dim]No album images found.[/dim]")
+
+            console.print()
             downloaded_count = download_album_tracks(
                 session,
-                album_soup,
+                tracks,
                 album_dir,
                 mp3_dir,
                 flac_dir,
@@ -774,9 +910,8 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, EOFError):
         show_cancel_message()
         sys.exit(130)
-    except RuntimeError as error:
-        error_text = str(error).lower()
-        if "cancel" in error_text or "no target directory selected" in error_text:
-            show_cancel_message()
-            sys.exit(130)
-        raise
+    except UserCancelledError:
+        show_cancel_message()
+        sys.exit(130)
+
+
