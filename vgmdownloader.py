@@ -485,7 +485,7 @@ def download_album_images(
     if downloaded == 0:
         console.print("[yellow]No album images could be downloaded.[/yellow]")
     else:
-        console.print(f"[green]Album images saved:[/green] {downloaded}")
+        console.print(f"[green]Images download complete!:[/green]")
 
 
 def iter_song_pages(song_table: Tag) -> Iterable[str]:
@@ -679,18 +679,23 @@ def download_song_files(
         if selected_format != "both" and extension != selected_format:
             continue
 
+        base_title = strip_track_prefix(extract_title_from_download_url(href, song_title, extension))
+        numbered_title = f"{track_index:02d}. {base_title}"
+        destination = ensure_unique_path(target_dir / f"{numbered_title}.{extension}")
+        output_name = f"{numbered_title}.{extension}"
+
         try:
-            response = session.get(href, timeout=REQUEST_TIMEOUT)
-            response.raise_for_status()
+            with console.status(
+                f"[bold cyan]Downloading[/bold cyan] {output_name}...",
+                spinner="dots",
+            ):
+                response = session.get(href, timeout=REQUEST_TIMEOUT)
+                response.raise_for_status()
+                destination.write_bytes(response.content)
         except requests.RequestException as error:
             console.print(f"[red]Failed:[/red] {song_title} ({extension}) -> {error}")
             continue
 
-        base_title = strip_track_prefix(extract_title_from_download_url(href, song_title, extension))
-        numbered_title = f"{track_index:02d}. {base_title}"
-        destination = ensure_unique_path(target_dir / f"{numbered_title}.{extension}")
-        destination.write_bytes(response.content)
-        output_name = f"{numbered_title}.{extension}"
         console.print(f"[green]Saved:[/green] {output_name}")
         downloaded += 1
 
@@ -812,6 +817,7 @@ def confirm_album_download(album_title: str, tracks: list[TrackEntry]) -> bool:
         console.print("[yellow]No playable tracks found for this album.[/yellow]")
         return False
 
+    clear_console()
     console.print(f"[bold cyan]Album:[/bold cyan] {album_title}")
     console.print(f"[bold cyan]Tracks found:[/bold cyan] {len(tracks)}")
     playlist = Table(title="Playlist", show_header=True, header_style="bold cyan")
