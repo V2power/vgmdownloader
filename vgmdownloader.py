@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +38,14 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) "
     "Gecko/20100101 Firefox/140.0"
 )
+DEFAULT_HEADERS = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,pt-BR;q=0.8",
+    "Cache-Control": "no-cache",
+    "DNT": "1",
+    "Pragma": "no-cache",
+    "Upgrade-Insecure-Requests": "1",
+}
 REQUEST_TIMEOUT = 30
 IMAGE_EXT_RE = re.compile(r"\.(jpg|jpeg|png|webp|gif|bmp)$", re.IGNORECASE)
 DownloadFormat = Literal["mp3", "flac", "both"]
@@ -42,6 +53,10 @@ console = Console()
 
 
 class UserCancelledError(RuntimeError):
+    pass
+
+
+class RequestBlockedError(RuntimeError):
     pass
 
 @dataclass(frozen=True)
@@ -87,17 +102,165 @@ def show_cancel_message() -> None:
 
 def build_session() -> requests.Session:
     session = requests.Session()
+    session.headers.update(DEFAULT_HEADERS)
     session.headers.update({"User-Agent": USER_AGENT})
+    setattr(session, "_vgm_curl_binary", shutil.which("curl.exe") or shutil.which("curl"))
     return session
+
+
+def get_curl_cookie_jar(session: requests.Session) -> str:
+    cookie_jar = getattr(session, "_vgm_curl_cookie_jar", None)
+    if isinstance(cookie_jar, str) and cookie_jar:
+        return cookie_jar
+
+    fd, cookie_jar = tempfile.mkstemp(prefix="vgmdownloader-cookies-", suffix=".txt")
+    os.close(fd)
+    setattr(session, "_vgm_curl_cookie_jar", cookie_jar)
+    return cookie_jar
+
+
+def build_request_url(url: str, params: dict[str, str] | None = None) -> str:
+    prepared_request = requests.Request("GET", url, params=params).prepare()
+    return prepared_request.url
+
+
+def cleanup_session_artifacts(session: requests.Session) -> None:
+    cookie_jar = getattr(session, "_vgm_curl_cookie_jar", None)
+    if isinstance(cookie_jar, str) and cookie_jar:
+        try:
+            Path(cookie_jar).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def warm_up_session(session: requests.Session) -> None:
+    if getattr(session, "_vgm_warmed_up", False):
+        return
+
+    try:
+        response = session.get(
+            BASE_URL,
+            timeout=REQUEST_TIMEOUT,
+            headers={"Referer": BASE_URL},
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return
+
+    setattr(session, "_vgm_warmed_up", True)
+
+
+def fetch_response_with_curl(
+    session: requests.Session,
+    url: str,
+    params: dict[str, str] | None = None,
+    referer: str | None = None,
+) -> requests.Response:
+    curl_binary = getattr(session, "_vgm_curl_binary", None)
+    if not isinstance(curl_binary, str) or not curl_binary:
+        raise requests.RequestException("curl is not available on this system.")
+
+    request_url = build_request_url(url, params)
+    cookie_jar = get_curl_cookie_jar(session)
+    command = [
+        curl_binary,
+        "--location",
+        "--compressed",
+        "--silent",
+        "--show-error",
+        "--fail-with-body",
+        "--user-agent",
+        USER_AGENT,
+        "--referer",
+        referer or BASE_URL,
+        "--cookie",
+        cookie_jar,
+        "--cookie-jar",
+        cookie_jar,
+    ]
+    for header_name, header_value in DEFAULT_HEADERS.items():
+        command.extend(["-H", f"{header_name}: {header_value}"])
+    command.append(request_url)
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            timeout=REQUEST_TIMEOUT + 5,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RequestBlockedError("The curl transport timed out while contacting KHInsider.") from error
+
+    if result.returncode != 0:
+        stderr_text = result.stderr.decode("utf-8", errors="replace").strip()
+        if "403" in stderr_text:
+            raise RequestBlockedError(
+                "KHInsider returned HTTP 403 even with the curl transport. "
+                "That points more to anti-bot fingerprinting or IP/rate blocking than missing headers."
+            )
+        raise requests.RequestException(
+            f"curl transport failed: {stderr_text or f'exit code {result.returncode}'}"
+        )
+
+    response = requests.Response()
+    response.status_code = 200
+    response.url = request_url
+    response._content = result.stdout
+    response.encoding = "utf-8"
+    response.headers = requests.structures.CaseInsensitiveDict()
+    return response
+
+
+def fetch_response(
+    session: requests.Session,
+    url: str,
+    params: dict[str, str] | None = None,
+    referer: str | None = None,
+) -> requests.Response:
+    curl_error: requests.RequestException | None = None
+    if getattr(session, "_vgm_curl_binary", None):
+        try:
+            return fetch_response_with_curl(session, url, params=params, referer=referer)
+        except RequestBlockedError:
+            raise
+        except requests.RequestException as error:
+            curl_error = error
+
+    try:
+        warm_up_session(session)
+
+        request_headers = {"Referer": referer or BASE_URL}
+        response = session.get(url, params=params, timeout=REQUEST_TIMEOUT, headers=request_headers)
+        if response.status_code == 403:
+            # Retry once after a short pause in case the site expects a warm session/cookies.
+            time.sleep(1)
+            warm_up_session(session)
+            response = session.get(url, params=params, timeout=REQUEST_TIMEOUT, headers=request_headers)
+
+        response.raise_for_status()
+    except requests.HTTPError as error:
+        if response.status_code == 403:
+            raise RequestBlockedError(
+                "KHInsider returned HTTP 403. The curl transport was not available or failed locally, "
+                "and the requests fallback was blocked by the site."
+            ) from error
+        raise
+    except requests.RequestException:
+        if curl_error is not None:
+            raise curl_error
+        raise
+
+    return response
 
 
 def get_soup(
     session: requests.Session,
     url: str,
     params: dict[str, str] | None = None,
+    referer: str | None = None,
 ) -> BeautifulSoup:
-    response = session.get(url, params=params, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
+    response = fetch_response(session, url, params=params, referer=referer)
     return BeautifulSoup(response.text, "html.parser")
 
 
@@ -195,7 +358,7 @@ def ask_download_format() -> DownloadFormat:
 
 def search_album_page(session: requests.Session, query: str) -> BeautifulSoup:
     search_url = urljoin(BASE_URL, "search")
-    return get_soup(session, search_url, params={"search": query})
+    return get_soup(session, search_url, params={"search": query}, referer=BASE_URL)
 
 
 def parse_search_results(search_soup: BeautifulSoup) -> tuple[str, str, list[AlbumOption]]:
@@ -344,10 +507,14 @@ def find_album_soup(session: requests.Session) -> BeautifulSoup:
                 console.print("[dim]Returning to search menu...[/dim]")
                 continue
             clear_console()
-            return get_soup(session, urljoin(BASE_URL, selected.relative_url))
+            return get_soup(
+                session,
+                urljoin(BASE_URL, selected.relative_url),
+                referer=urljoin(BASE_URL, "search"),
+            )
 
         if heading:
-            return get_soup(session, resolve_album_url(heading))
+            return get_soup(session, resolve_album_url(heading), referer=urljoin(BASE_URL, "search"))
 
         console.print("[yellow]Unexpected search response. Try again.[/yellow]")
 
@@ -470,8 +637,7 @@ def download_album_images(
     ):
         for index, image_url in enumerate(image_urls, start=1):
             try:
-                response = session.get(image_url, timeout=REQUEST_TIMEOUT)
-                response.raise_for_status()
+                response = fetch_response(session, image_url, referer=BASE_URL)
             except requests.RequestException as error:
                 console.print(f"[yellow]Could not download image:[/yellow] {image_url} ({error})")
                 continue
@@ -689,8 +855,7 @@ def download_song_files(
                 f"[bold cyan]Downloading[/bold cyan] {output_name}...",
                 spinner="dots",
             ):
-                response = session.get(href, timeout=REQUEST_TIMEOUT)
-                response.raise_for_status()
+                response = fetch_response(session, href, referer=BASE_URL)
                 destination.write_bytes(response.content)
         except requests.RequestException as error:
             console.print(f"[red]Failed:[/red] {song_title} ({extension}) -> {error}")
@@ -785,7 +950,9 @@ def download_album_tracks(
         return 0
 
     total_downloaded = 0
+    total_tracks = len(tracks)
     for track_index, track in enumerate(tracks, start=1):
+        remaining_tracks = total_tracks - track_index + 1
         try:
             song_soup = get_soup(session, urljoin(BASE_URL, track.source_href))
         except requests.RequestException as error:
@@ -794,7 +961,13 @@ def download_album_tracks(
 
         parsed_title = parse_song_title(song_soup, selected_format)
         clean_song_title = strip_track_prefix(parsed_title or track.title)
-        console.print(f"[cyan]Track:[/cyan] {clean_song_title}")
+        console.print(
+            f"[dim]Remaining tracks:[/dim] [cyan]{remaining_tracks}[/cyan] "
+            f"[dim]of[/dim] [cyan]{total_tracks}[/cyan]"
+        )
+        console.print(
+            f"[cyan]Track {track_index}/{total_tracks}:[/cyan] {clean_song_title}"
+        )
         downloaded_for_track = download_song_files(
             session,
             song_soup,
@@ -839,23 +1012,64 @@ def confirm_album_download(album_title: str, tracks: list[TrackEntry]) -> bool:
 def main() -> None:
     ui_header()
     with build_session() as session:
-        while True:
-            album_soup = find_album_soup(session)
-            selected_format = choose_download_format_for_album(session, album_soup)
-            page_content = album_soup.find("div", {"id": "pageContent"})
-            if not isinstance(page_content, Tag):
-                raise RuntimeError("Album page does not contain expected content.")
+        try:
+            while True:
+                album_soup = find_album_soup(session)
+                selected_format = choose_download_format_for_album(session, album_soup)
+                page_content = album_soup.find("div", {"id": "pageContent"})
+                if not isinstance(page_content, Tag):
+                    raise RuntimeError("Album page does not contain expected content.")
 
-            album_title_tag = page_content.find("h2")
-            album_title = (
-                album_title_tag.get_text(strip=True)
-                if isinstance(album_title_tag, Tag)
-                else "Unknown Album"
-            )
+                album_title_tag = page_content.find("h2")
+                album_title = (
+                    album_title_tag.get_text(strip=True)
+                    if isinstance(album_title_tag, Tag)
+                    else "Unknown Album"
+                )
 
-            tracks = collect_album_tracks(album_soup)
-            if not confirm_album_download(album_title, tracks):
-                console.print("[yellow]Album download canceled by user.[/yellow]")
+                tracks = collect_album_tracks(album_soup)
+                if not confirm_album_download(album_title, tracks):
+                    console.print("[yellow]Album download canceled by user.[/yellow]")
+                    if not ask_download_another_album():
+                        console.print(
+                            Panel.fit(
+                                "[bold cyan]Thank you for using VGM Downloader![/bold cyan]\n"
+                                "[dim]The program will close in 5 seconds...[/dim]",
+                                border_style="cyan",
+                            )
+                        )
+                        time.sleep(5)
+                        break
+                    clear_console()
+                    ui_header()
+                    continue
+
+                album_dir, mp3_dir, flac_dir = prepare_directories(album_title, selected_format)
+                image_urls = collect_album_image_urls(album_soup)
+                if image_urls:
+                    console.print(f"[bold cyan]Album images found:[/bold cyan] {len(image_urls)}")
+                    if ask_download_images(len(image_urls)):
+                        download_album_images(session, image_urls, album_dir)
+                else:
+                    console.print("[dim]No album images found.[/dim]")
+
+                console.print()
+                downloaded_count = download_album_tracks(
+                    session,
+                    tracks,
+                    album_dir,
+                    mp3_dir,
+                    flac_dir,
+                    selected_format,
+                )
+
+                console.print(
+                    Panel.fit(
+                        f"[bold green]Finished Album[/bold green]\n"
+                        f"Downloaded files: [bold]{downloaded_count}[/bold]",
+                        border_style="green",
+                    )
+                )
                 if not ask_download_another_album():
                     console.print(
                         Panel.fit(
@@ -868,46 +1082,8 @@ def main() -> None:
                     break
                 clear_console()
                 ui_header()
-                continue
-
-            album_dir, mp3_dir, flac_dir = prepare_directories(album_title, selected_format)
-            image_urls = collect_album_image_urls(album_soup)
-            if image_urls:
-                console.print(f"[bold cyan]Album images found:[/bold cyan] {len(image_urls)}")
-                if ask_download_images(len(image_urls)):
-                    download_album_images(session, image_urls, album_dir)
-            else:
-                console.print("[dim]No album images found.[/dim]")
-
-            console.print()
-            downloaded_count = download_album_tracks(
-                session,
-                tracks,
-                album_dir,
-                mp3_dir,
-                flac_dir,
-                selected_format,
-            )
-
-            console.print(
-                Panel.fit(
-                    f"[bold green]Finished Album[/bold green]\n"
-                    f"Downloaded files: [bold]{downloaded_count}[/bold]",
-                    border_style="green",
-                )
-            )
-            if not ask_download_another_album():
-                console.print(
-                    Panel.fit(
-                        "[bold cyan]Thank you for using VGM Downloader![/bold cyan]\n"
-                        "[dim]The program will close in 5 seconds...[/dim]",
-                        border_style="cyan",
-                    )
-                )
-                time.sleep(5)
-                break
-            clear_console()
-            ui_header()
+        finally:
+            cleanup_session_artifacts(session)
 
 
 if __name__ == "__main__":
@@ -919,5 +1095,15 @@ if __name__ == "__main__":
     except UserCancelledError:
         show_cancel_message()
         sys.exit(130)
+    except RequestBlockedError as error:
+        console.print()
+        console.print(
+            Panel.fit(
+                f"[bold red]Access blocked by KHInsider[/bold red]\n"
+                f"[dim]{error}[/dim]",
+                border_style="red",
+            )
+        )
+        sys.exit(1)
 
 
