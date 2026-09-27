@@ -2,6 +2,8 @@
 
 - Download entire game music albums;
 -  .mp3 and .flac formats;
+- Automatically fill missing Track Number and Total Tracks tags after each audio download, using the filename numbering and full album track count while preserving existing tag values;
+- Save the first downloaded album image as `cover.jpg` or `cover.png` (other image formats keep their extension), also placing it in the MP3/FLAC subfolders when downloading both formats. Existing covers are preserved;
 - Search mechanism to find your exact game.
 
 # VGMDownloader
@@ -17,12 +19,13 @@ This program uses web scraping with  [BeautifulSoap](https://beautiful-soup-4.re
 
 ## How to compile it
 
-First of all you are going to need [Python](https://www.python.org/) and four depedencies, [BeautifulSoup](https://pypi.org/project/beautifulsoup4/) for the web scrapping, [Requests](https://docs.python-requests.org/en/latest/user/install/#install) to help us with the HTTP requests and [Rich/Questionary](https://pypi.org/project/questionary/) to give us a prettier CLI.
+First of all you are going to need [Python](https://www.python.org/), [BeautifulSoup](https://pypi.org/project/beautifulsoup4/) for web scraping, [Requests](https://docs.python-requests.org/en/latest/user/install/#install) for HTTP requests, [Rich/Questionary](https://pypi.org/project/questionary/) for the CLI, and [Mutagen](https://pypi.org/project/mutagen/) for audio tags.
 
 ```python
 pip install beautifulsoup4
 pip install requests
 pip install rich questionary
+pip install mutagen
 ```
 
 ### Or create an **virtual enviroment** and install everything with the ``requirements.txt``.

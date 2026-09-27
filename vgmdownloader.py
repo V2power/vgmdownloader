@@ -13,6 +13,14 @@ from typing import Iterable, Literal
 from urllib.parse import unquote, urljoin, urlparse
 
 try:
+    from mutagen import MutagenError
+    from mutagen.flac import FLAC
+    from mutagen.id3 import ID3, ID3NoHeaderError, TRCK
+except ImportError:
+    print("Missing dependency: mutagen. Install with: pip install mutagen")
+    sys.exit(1)
+
+try:
     import requests
 except ImportError:
     print("Missing dependency: requests. Install with: pip install requests")
@@ -581,14 +589,10 @@ def collect_album_image_urls(album_soup: BeautifulSoup) -> list[str]:
     image_urls: list[str] = []
     seen_urls: set[str] = set()
 
-    # Faster than CSS selectors on large pages and still supports both patterns:
-    # class on <img> and class on the parent container.
-    direct_tags = page_content.find_all("img", class_="albumImage")
-    container_tags = page_content.find_all(class_="albumImage")
-
+    # Keep page order, whether the class is on the image or its container.
     ordered_tags: list[Tag] = []
     seen_tag_ids: set[int] = set()
-    for candidate in [*direct_tags, *container_tags]:
+    for candidate in page_content.find_all(class_="albumImage"):
         if not isinstance(candidate, Tag):
             continue
         image_tag = candidate if candidate.name == "img" else candidate.find("img")
@@ -625,6 +629,7 @@ def download_album_images(
     session: requests.Session,
     image_urls: list[str],
     album_dir: Path,
+    audio_dirs: Iterable[Path] = (),
 ) -> None:
     if not image_urls:
         console.print("[dim]No album images found.[/dim]")
@@ -644,6 +649,27 @@ def download_album_images(
 
             original_name = unquote(Path(urlparse(image_url).path).name).strip()
             file_name = sanitize_filename(original_name) if original_name else f"Image {index:02d}.jpg"
+            if downloaded == 0:
+                # Use the actual image format when available (URLs can be misleading).
+                if response.content.startswith(b"\xff\xd8\xff"):
+                    extension = ".jpg"
+                elif response.content.startswith(b"\x89PNG\r\n\x1a\n"):
+                    extension = ".png"
+                else:
+                    extension = Path(file_name).suffix.lower()
+                    if extension == ".jpeg":
+                        extension = ".jpg"
+                file_name = f"cover{extension}"
+                # Preserve an existing cover on repeated downloads.
+                destination = album_dir / file_name
+                if not destination.exists():
+                    destination.write_bytes(response.content)
+                for audio_dir in audio_dirs:
+                    cover_path = audio_dir / file_name
+                    if not cover_path.exists():
+                        shutil.copyfile(destination, cover_path)
+                downloaded += 1
+                continue
             destination = ensure_unique_path(album_dir / file_name)
             destination.write_bytes(response.content)
             downloaded += 1
@@ -802,6 +828,47 @@ def parse_song_title(song_soup: BeautifulSoup, selected_format: DownloadFormat) 
     return strip_track_prefix(bold_tags[1].get_text(strip=True))
 
 
+def write_track_tags(destination: Path, track_index: int, total_tracks: int) -> None:
+    if destination.suffix.lower() == ".mp3":
+        try:
+            tags = ID3(destination)
+        except ID3NoHeaderError:
+            tags = ID3()
+        # ID3 stores both values in TRCK, e.g. "3/12".
+        existing = tags.get("TRCK")
+        value = str(existing) if existing is not None else ""
+        number, separator, total = value.partition("/")
+        if number.strip() and separator and total.strip():
+            return
+        version = 3 if tags.version[1] == 3 else 4
+        number = number if number.strip() else str(track_index)
+        total = total if total.strip() else str(total_tracks)
+        tags.add(TRCK(encoding=3, text=[f"{number}/{total}"]))
+        tags.save(destination, v2_version=version)
+    elif destination.suffix.lower() == ".flac":
+        audio = FLAC(destination)
+        changed = False
+        if not any(value.strip() for value in audio.get("tracknumber", [])):
+            audio["tracknumber"] = str(track_index)
+            changed = True
+        has_total = any(
+            value.strip()
+            for key in ("tracktotal", "totaltracks")
+            for value in audio.get(key, [])
+        )
+        # Some files put the total in TRACKNUMBER as "3/12".
+        has_total = has_total or any(
+            value.partition("/")[2].strip() for value in audio.get("tracknumber", [])
+        )
+        if not has_total:
+            audio["tracktotal"] = str(total_tracks)
+            changed = True
+        if changed:
+            audio.save()
+    else:
+        raise ValueError(f"Unsupported audio format: {destination.suffix}")
+
+
 def download_song_files(
     session: requests.Session,
     song_soup: BeautifulSoup,
@@ -811,6 +878,7 @@ def download_song_files(
     flac_dir: Path | None,
     selected_format: DownloadFormat,
     track_index: int,
+    total_tracks: int,
 ) -> int:
     page_content = song_soup.find("div", {"id": "pageContent"})
     if not isinstance(page_content, Tag):
@@ -861,7 +929,14 @@ def download_song_files(
             console.print(f"[red]Failed:[/red] {song_title} ({extension}) -> {error}")
             continue
 
-        console.print(f"[green]Saved:[/green] {output_name}")
+        try:
+            write_track_tags(destination, track_index, total_tracks)
+        except (MutagenError, OSError) as error:
+            console.print(
+                f"[yellow]Saved, but could not write track tags:[/yellow] {output_name} -> {error}"
+            )
+        else:
+            console.print(f"[green]Saved:[/green] {output_name}")
         downloaded += 1
 
     return downloaded
@@ -977,6 +1052,7 @@ def download_album_tracks(
             flac_dir,
             selected_format,
             track_index,
+            total_tracks,
         )
         total_downloaded += downloaded_for_track
         if downloaded_for_track > 0:
@@ -1049,7 +1125,10 @@ def main() -> None:
                 if image_urls:
                     console.print(f"[bold cyan]Album images found:[/bold cyan] {len(image_urls)}")
                     if ask_download_images(len(image_urls)):
-                        download_album_images(session, image_urls, album_dir)
+                        download_album_images(
+                            session, image_urls, album_dir,
+                            audio_dirs=[directory for directory in (mp3_dir, flac_dir) if directory is not None],
+                        )
                 else:
                     console.print("[dim]No album images found.[/dim]")
 
